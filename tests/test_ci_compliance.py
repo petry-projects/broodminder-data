@@ -175,7 +175,7 @@ def test_dev_lead_uses_ref_matches_agent_ref():
 
 def _pr_auto_review_text() -> str:
     assert PR_AUTO_REVIEW_WORKFLOW.exists(), f"{PR_AUTO_REVIEW_WORKFLOW} is missing"
-    return PR_AUTO_REVIEW_WORKFLOW.read_text()
+    return PR_AUTO_REVIEW_WORKFLOW.read_text(encoding="utf-8")
 
 
 @pytest.mark.compliance

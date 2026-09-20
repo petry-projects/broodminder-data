@@ -27,6 +27,7 @@ ROOT = Path(__file__).resolve().parent.parent
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 GITLEAKS_CONFIG = ROOT / ".gitleaks.toml"
 DEV_LEAD_WORKFLOW = ROOT / ".github" / "workflows" / "dev-lead.yml"
+PR_AUTO_REVIEW_WORKFLOW = ROOT / ".github" / "workflows" / "pr-auto-review.yml"
 
 # A dev-lead channel is `stable`, `next`, `ring<N>`, or the versioned
 # `v<N>-stable` / `v<N>-next` / `v<N>-ring<M>` form (see ci-standards.md).
@@ -156,3 +157,54 @@ def test_dev_lead_uses_ref_matches_agent_ref():
         f"uses ref '{uses.group(1)}' and agent_ref '{agent.group(1)}' must pin "
         "the same channel"
     )
+
+
+# --- pr-auto-review caller-stub concurrency surface --------------------------
+#
+# The pr-auto-review.yml caller stub is a thin caller whose `on:`, `permissions:`,
+# and `concurrency:` surfaces are owned centrally by
+# petry-projects/.github/standards/workflows/pr-auto-review.yml — only the
+# documented `with:` inputs and the tier channel pin may differ per repo. The
+# `concurrency:` block deduplicates the default-branch-context triggers
+# (check_suite / workflow_run) per PR while leaving PR-head triggers on a
+# unique-per-run group (issue #1126). A stub that drops or alters this block has
+# drifted from canonical and must be re-synced (stub-surface-drift check).
+#
+# Ref: petry-projects/.github/standards/ci-standards.md#centralization-tiers
+
+
+def _pr_auto_review_text() -> str:
+    assert PR_AUTO_REVIEW_WORKFLOW.exists(), f"{PR_AUTO_REVIEW_WORKFLOW} is missing"
+    return PR_AUTO_REVIEW_WORKFLOW.read_text()
+
+
+@pytest.mark.compliance
+def test_pr_auto_review_declares_concurrency_block():
+    """The stub must declare a top-level `concurrency:` block (not nested under a
+    job) so default-branch-context triggers dedupe per PR."""
+    text = _pr_auto_review_text()
+    assert re.search(r"^concurrency:\s*$", text, re.MULTILINE), (
+        "pr-auto-review.yml must declare a top-level `concurrency:` block "
+        "re-synced from standards/workflows/pr-auto-review.yml"
+    )
+
+
+@pytest.mark.compliance
+def test_pr_auto_review_concurrency_group_matches_canonical():
+    """The `concurrency:` surface must match the canonical group/cancel
+    expressions: check_suite and workflow_run collapse onto a per-PR group and
+    cancel in progress; every other context falls back to a unique-per-run
+    group that never cancels."""
+    text = _pr_auto_review_text()
+    for needle in (
+        "github.event.check_suite.pull_requests[0].number",
+        "github.event.workflow_run.pull_requests[0].number",
+        "format('pr-auto-review-ready-check-pr-{0}'",
+        "format('pr-auto-review-ready-check-unique-{0}', github.run_id)",
+        "cancel-in-progress: ${{ github.event_name == 'check_suite' "
+        "|| github.event_name == 'workflow_run' }}",
+    ):
+        assert needle in text, (
+            f"pr-auto-review.yml concurrency surface has drifted from canonical; "
+            f"missing: {needle!r}"
+        )

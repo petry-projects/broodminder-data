@@ -79,7 +79,7 @@ A flattened, analysis-ready row per reading:
 | `m_humidity` | relative humidity (humidity-capable devices) |
 | `m_weight` | scale weight (hives with a scale) |
 | `m_swarmState` | BroodMinder swarm indicator |
-| `m_audio` | acoustic frequency/amplitude (audio-capable devices) |
+| `m_audio` | acoustic reading (audio-capable devices; unit/scale unconfirmed) |
 | `m_radar` | movement/activity indicator (radar-equipped devices) |
 
 > Metric presence varies by device type — temperature is near-universal; weight

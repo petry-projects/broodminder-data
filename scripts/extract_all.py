@@ -77,13 +77,32 @@ def get_manifest_max_end(manifest: dict) -> int | None:
         return None
     ends = []
     for k in completed.keys():
-        parts = k.split("|")
+        parts = k.rsplit("|", 2)
         if len(parts) == 3:
             try:
                 ends.append(int(parts[2]))
             except ValueError:
                 pass
     return max(ends) if ends else None
+
+
+def get_hive_resume_start(manifest: dict, hive_id: str | int, default_start: int) -> int:
+    """Find the resume start timestamp for a specific hive based on completed windows.
+
+    Resumes from the latest completed window end timestamp for this hive, or falls back
+    to default_start if no prior completed windows exist for the hive.
+    """
+    completed = manifest.get("completed", {})
+    hid_str = str(hive_id)
+    ends = []
+    for k in completed.keys():
+        parts = k.rsplit("|", 2)
+        if len(parts) == 3 and parts[0] == hid_str:
+            try:
+                ends.append(int(parts[2]))
+            except ValueError:
+                pass
+    return max(ends) if ends else default_start
 
 
 def main() -> int:
@@ -113,17 +132,7 @@ def main() -> int:
     manifest = load_manifest(manifest_path)
     completed: dict = manifest["completed"]
 
-    if args.catchup:
-        max_end = get_manifest_max_end(manifest)
-        if max_end is not None:
-            start = max_end
-            start_dt = datetime.fromtimestamp(start, tz=timezone.utc)
-            print(f"catchup mode: resuming from {start_dt:%Y-%m-%d %H:%M:%S UTC} (manifest max end)")
-        else:
-            print("catchup mode: no prior completed windows found in manifest; using start date")
-            start = parse_date(args.start)
-    else:
-        start = parse_date(args.start)
+    start = parse_date(args.start)
 
     # Snap the open end to midnight UTC so re-runs within a day reuse the same
     # window key (stable resume; the live now-epoch would otherwise mint a new
@@ -134,7 +143,7 @@ def main() -> int:
     else:
         end = now_epoch() // 86400 * 86400
 
-    if start >= end:
+    if not args.catchup and start >= end:
         end_dt = datetime.fromtimestamp(end, tz=timezone.utc)
         print(f"already up to date through {end_dt:%Y-%m-%d} (start={start} >= end={end}). Nothing to extract.")
         return 0
@@ -165,6 +174,18 @@ def main() -> int:
                 apiaries = [a for a in apiaries
                             if a.get("name", "").lower() in wanted or a.get("apiaryId") in args.apiary]
             hives = [(a, h) for a in apiaries for h in a.get("hives", [])]
+            if args.catchup:
+                all_caught_up = True
+                for a, h in hives:
+                    h_start = get_hive_resume_start(manifest, h["hiveId"], start)
+                    if h_start < end:
+                        all_caught_up = False
+                        break
+                if all_caught_up:
+                    end_dt = datetime.fromtimestamp(end, tz=timezone.utc)
+                    print(f"already up to date through {end_dt:%Y-%m-%d} across all {len(hives)} hives. Nothing to extract.")
+                    return 0
+
             print(f"scope: {len(apiaries)} apiaries, {len(hives)} hives")
             print(f"range: {args.start} .. {args.end or 'now'}  "
                   f"({len(list(iter_windows(start, end, window)))} windows/hive)")
@@ -173,7 +194,10 @@ def main() -> int:
             for a, h in hives:
                 hid = h["hiveId"]
                 hdir = raw / hid
-                wins = list(iter_windows(start, end, window))
+                hive_start = get_hive_resume_start(manifest, hid, start) if args.catchup else start
+                if hive_start >= end:
+                    continue
+                wins = list(iter_windows(hive_start, end, window))
                 if args.reverse:
                     wins.reverse()
                 consecutive_empty = 0

@@ -34,7 +34,13 @@ def first(obj, *keys):
 
 def main() -> int:
     out: dict = {}
-    with BroodMinderClient() as bm:
+    try:
+        bm_client = BroodMinderClient()
+    except BroodMinderError as e:
+        print(f"AUTH/CONFIG FAILED: {e}", file=sys.stderr)
+        return 1
+
+    with bm_client as bm:
         print(f"base_url = {bm.base_url}")
         print("→ GET /user/metadata/apiaries")
         try:

@@ -79,9 +79,11 @@ A flattened, analysis-ready row per reading:
 | `m_humidity` | relative humidity (humidity-capable devices) |
 | `m_weight` | scale weight (hives with a scale) |
 | `m_swarmState` | BroodMinder swarm indicator |
+| `m_audio` | acoustic frequency/amplitude (audio-capable devices) |
+| `m_radar` | movement/activity indicator (radar-equipped devices) |
 
 > Metric presence varies by device type — temperature is near-universal; weight
-> appears only on hives with a scale.
+> appears only on hives with a scale; audio and radar appear on specialized monitors.
 
 ## Get an API key
 
@@ -126,8 +128,11 @@ BROODMINDER_BASE_URL=https://external-api.mybroodminder.com
 # 2. Pull history (resumable; stops before the daily cap)
 .venv/bin/python scripts/extract_all.py --start 2025-01-01
 
-# 3. Build analysis-ready NDJSON + CSV from the raw pull (no API calls)
-.venv/bin/python scripts/flatten.py
+# 3. Catch up forward from your latest extracted window
+.venv/bin/python scripts/extract_all.py --catchup
+
+# 4. Build analysis-ready NDJSON + CSV (use --merge to preserve existing data)
+.venv/bin/python scripts/flatten.py --merge
 ```
 
 `extract_all.py` options:
@@ -136,12 +141,20 @@ BROODMINDER_BASE_URL=https://external-api.mybroodminder.com
 |---|---|---|
 | `--start YYYY-MM-DD` | `2021-01-01` | history start |
 | `--end YYYY-MM-DD` | today (UTC) | history end |
+| `--catchup` | off | resume forward from latest window in `manifest.json` |
 | `--window-days N` | `180` | request window size (API caps at ~6 months) |
 | `--apiary NAME\|ID` | all | limit to one apiary (repeatable) |
 | `--max-calls N` | `900` | stop before this many API calls (daily-cap guard) |
 | `--reverse` | off | walk newest→oldest (for backfilling) |
 | `--stop-after-empty N` | `0` | with `--reverse`, stop a hive after N empty windows |
 | `--no-notes` | off | skip the notes endpoint |
+
+`flatten.py` options:
+
+| flag | default | purpose |
+|---|---|---|
+| `--merge` | off | merge incremental raw windows into existing outputs |
+| `--no-csv` | off | skip generating `readings.csv.gz` |
 
 ## Full-history extraction
 
@@ -159,12 +172,21 @@ no old data, use **backfill mode**:
     --reverse --stop-after-empty 3
 ```
 
-For a fully unattended, multi-day pull, [`scripts/cron_backfill.sh`](scripts/cron_backfill.sh)
+For a fully unattended, multi-day backfill, [`scripts/cron_backfill.sh`](scripts/cron_backfill.sh)
 runs the resumable backfill + flatten on a schedule (idempotent, safe to repeat):
 
 ```bash
 ( crontab -l 2>/dev/null; \
   echo "20 */6 * * * $(pwd)/scripts/cron_backfill.sh" ) | crontab -
+```
+
+For routine ongoing catch-up exports after the initial backfill is complete,
+[`scripts/cron_sync.sh`](scripts/cron_sync.sh) pulls only new windows forward and
+merges them:
+
+```bash
+( crontab -l 2>/dev/null; \
+  echo "0 4 * * * $(pwd)/scripts/cron_sync.sh" ) | crontab -
 ```
 
 ## Output files
@@ -228,11 +250,13 @@ broodminder-export/
 │   └── client.py            # reusable BroodMinderClient (auth, retry, windowing)
 ├── scripts/
 │   ├── discover.py          # auth check + topology/schema sample
-│   ├── extract_all.py       # resumable, budget-aware extraction
-│   ├── flatten.py           # raw → NDJSON/CSV/coverage (no API calls)
-│   └── cron_backfill.sh     # unattended multi-day backfill
+│   ├── extract_all.py       # resumable, budget-aware extraction (--catchup)
+│   ├── flatten.py           # raw → NDJSON/CSV/coverage (--merge)
+│   ├── cron_sync.sh         # routine unattended forward catch-up sync
+│   └── cron_backfill.sh     # initial unattended multi-day backfill
 ├── tests/
 │   ├── conftest.py
+│   ├── test_offline.py      # fast deterministic unit tests (run in CI)
 │   └── test_contract.py     # live contract tests (skip without a key)
 ├── openapi/
 │   └── broodminder-openapi.yaml

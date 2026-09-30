@@ -70,6 +70,22 @@ def load_manifest(path: Path) -> dict:
     return {"completed": {}, "meta": {}}
 
 
+def get_manifest_max_end(manifest: dict) -> int | None:
+    """Find the latest completed window end timestamp across all hives."""
+    completed = manifest.get("completed", {})
+    if not completed:
+        return None
+    ends = []
+    for k in completed.keys():
+        parts = k.split("|")
+        if len(parts) == 3:
+            try:
+                ends.append(int(parts[2]))
+            except ValueError:
+                pass
+    return max(ends) if ends else None
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--start", default="2021-01-01", help="history start (YYYY-MM-DD)")
@@ -86,9 +102,29 @@ def main() -> int:
     p.add_argument("--stop-after-empty", type=int, default=0,
                    help="with --reverse: stop a hive after N consecutive empty "
                         "windows (saves calls on hives with no old data; 0=off)")
+    p.add_argument("--catchup", action="store_true",
+                   help="automatically resume forward from latest completed window in manifest.json")
     args = p.parse_args()
 
-    start = parse_date(args.start)
+    out = Path(args.out)
+    raw = out / "raw"
+    out.mkdir(parents=True, exist_ok=True)
+    manifest_path = out / "manifest.json"
+    manifest = load_manifest(manifest_path)
+    completed: dict = manifest["completed"]
+
+    if args.catchup:
+        max_end = get_manifest_max_end(manifest)
+        if max_end is not None:
+            start = max_end
+            start_dt = datetime.fromtimestamp(start, tz=timezone.utc)
+            print(f"catchup mode: resuming from {start_dt:%Y-%m-%d %H:%M:%S UTC} (manifest max end)")
+        else:
+            print("catchup mode: no prior completed windows found in manifest; using start date")
+            start = parse_date(args.start)
+    else:
+        start = parse_date(args.start)
+
     # Snap the open end to midnight UTC so re-runs within a day reuse the same
     # window key (stable resume; the live now-epoch would otherwise mint a new
     # key each run and re-fetch the final window). Today's partial data is
@@ -97,13 +133,13 @@ def main() -> int:
         end = parse_date(args.end)
     else:
         end = now_epoch() // 86400 * 86400
+
+    if start >= end:
+        end_dt = datetime.fromtimestamp(end, tz=timezone.utc)
+        print(f"already up to date through {end_dt:%Y-%m-%d} (start={start} >= end={end}). Nothing to extract.")
+        return 0
+
     window = args.window_days * 24 * 60 * 60
-    out = Path(args.out)
-    raw = out / "raw"
-    out.mkdir(parents=True, exist_ok=True)
-    manifest_path = out / "manifest.json"
-    manifest = load_manifest(manifest_path)
-    completed: dict = manifest["completed"]
 
     def save_manifest():
         manifest["meta"] = {
@@ -112,8 +148,14 @@ def main() -> int:
         }
         manifest_path.write_text(json.dumps(manifest, indent=2))
 
+    try:
+        bm_client = BroodMinderClient()
+    except BroodMinderError as ex:
+        print(f"✗ Client initialization error: {ex}", file=sys.stderr)
+        return 1
+
     stopped_early = False
-    with BroodMinderClient() as bm:
+    with bm_client as bm:
         try:
             # The very first call can itself be rate-limited; keep it inside the
             # handler so a 429 here exits cleanly (resumable) rather than crashing.

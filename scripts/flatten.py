@@ -95,10 +95,11 @@ def main() -> int:
     if args.merge and target_ndjson.exists() and target_ndjson.stat().st_size > 0:
         with gzip.open(target_ndjson, "rt", encoding="utf-8") as in_fh:
             for line in in_fh:
-                for part in line.split('"m_')[1:]:
-                    k = part.split('":')[0]
-                    if k:
-                        metric_keys.add(k)
+                if not line.strip():
+                    continue
+                for key in json.loads(line):
+                    if key.startswith("m_") and len(key) > 2:
+                        metric_keys.add(key[2:])
 
     metric_cols = [f"m_{k}" for k in sorted(metric_keys)]
 
@@ -110,9 +111,9 @@ def main() -> int:
     seen: dict[str, set] = defaultdict(set)
     n_rows = 0
 
-    pid = os.getpid()
-    tmp_ndjson = OUT / f"readings.ndjson.gz.tmp.{pid}"
-    tmp_csv = OUT / f"readings.csv.gz.tmp.{pid}"
+    proc_id = os.getpid()
+    tmp_ndjson = OUT / f"readings.ndjson.gz.tmp.{proc_id}"
+    tmp_csv = OUT / f"readings.csv.gz.tmp.{proc_id}"
 
     write_ndjson_path = tmp_ndjson
     ndjson_fh = gzip.open(write_ndjson_path, "wt", encoding="utf-8")
@@ -212,7 +213,7 @@ def main() -> int:
 
     # Notes -> plain ndjson
     target_notes = OUT / "notes.ndjson"
-    tmp_notes = OUT / f"notes.ndjson.tmp.{pid}"
+    tmp_notes = OUT / f"notes.ndjson.tmp.{proc_id}"
     write_notes_path = tmp_notes
     seen_notes: set = set()
     n_notes = 0

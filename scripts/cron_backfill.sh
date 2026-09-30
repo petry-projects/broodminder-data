@@ -19,10 +19,24 @@ set -uo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PY="$DIR/.venv/bin/python"
 LOG="$DIR/data/cron_backfill.log"
+LOCKFILE="$DIR/data/.sync.lock"
 cd "$DIR" || exit 1
 [ -x "$PY" ] || PY="python3"   # fall back to system python if no venv
 
 ts() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+
+mkdir -p "$DIR/data"
+
+# Acquire exclusive lock to prevent overlapping sync or backfill runs
+if ! command -v flock >/dev/null 2>&1; then
+    echo "=== $(ts) backfill run failed: flock command not found ===" >> "$LOG"
+    exit 1
+fi
+exec 200>"$LOCKFILE"
+if ! flock -n 200; then
+    echo "=== $(ts) backfill run skipped: another sync or backfill process holds the lock ===" >> "$LOG"
+    exit 0
+fi
 
 echo "=== $(ts) backfill run start ===" >> "$LOG"
 # Walk newest->oldest, stopping each hive after 3 consecutive empty 6-month

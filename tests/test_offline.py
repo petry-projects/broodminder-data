@@ -271,3 +271,85 @@ def test_flatten_fresh_atomic_build(tmp_path, monkeypatch):
     # No leftover temporary files
     assert list(out_dir.glob("*.tmp*")) == []
 
+
+def test_flatten_atomic_interruption_preserves_existing_targets(tmp_path, monkeypatch):
+    import scripts.flatten as fl
+
+    out_dir = tmp_path / "extract"
+    raw_dir = out_dir / "raw"
+    h1_dir = raw_dir / "h1"
+    h1_dir.mkdir(parents=True)
+
+    monkeypatch.setattr(fl, "OUT", out_dir)
+    monkeypatch.setattr(fl, "RAW", raw_dir)
+
+    # Pre-create baseline valid targets
+    orig_readings = [{"hiveId": "h1", "timestamp": 100, "datetime": "1970-01-01T00:01:40+00:00"}]
+    with gzip.open(out_dir / "readings.ndjson.gz", "wt", encoding="utf-8") as fh:
+        fh.write(json.dumps(orig_readings[0]) + "\n")
+    orig_notes = [{"hiveId": "h1", "id": "orig_note"}]
+    (out_dir / "notes.ndjson").write_text(json.dumps(orig_notes[0]) + "\n")
+
+    raw_readings = [
+        {
+            "positionID": "pos1",
+            "readings": [
+                {"deviceId": "dev1", "timestamp": 2000, "readings": {"temperature": 70.0}},
+            ],
+        }
+    ]
+    with gzip.open(h1_dir / "2000-2200.readings.json.gz", "wt", encoding="utf-8") as fh:
+        json.dump(raw_readings, fh)
+
+    manifest = {"completed": {"h1|2000|2200": {"apiaryName": "Ap1", "hiveName": "H1"}}}
+    (out_dir / "manifest.json").write_text(json.dumps(manifest))
+
+    # Simulate crash / exception during json.dumps in reading loop
+    original_dumps = json.dumps
+    def failing_dumps(obj, *args, **kwargs):
+        if isinstance(obj, dict) and obj.get("timestamp") == 2000:
+            raise RuntimeError("Simulated crash during write")
+        return original_dumps(obj, *args, **kwargs)
+
+    monkeypatch.setattr(json, "dumps", failing_dumps)
+    monkeypatch.setattr("sys.argv", ["flatten.py"])
+
+    with pytest.raises(RuntimeError, match="Simulated crash"):
+        fl.main()
+
+    # Pre-existing target files MUST survive uncorrupted
+    with gzip.open(out_dir / "readings.ndjson.gz", "rt", encoding="utf-8") as fh:
+        surviving = [json.loads(line) for line in fh]
+    assert surviving == orig_readings
+    assert (out_dir / "notes.ndjson").read_text().strip() == json.dumps(orig_notes[0])
+
+    # No leftover temporary files
+    assert list(out_dir.glob("*.tmp*")) == []
+
+
+def test_extract_all_offline_catchup_check(tmp_path, monkeypatch, capsys):
+    import scripts.extract_all as ex
+
+    out_dir = tmp_path / "extract"
+    out_dir.mkdir()
+    # Manifest with all hives caught up through timestamp 2000
+    manifest = {
+        "completed": {
+            "h1|1000|2000": {"reading_rows": 10},
+            "h2|1000|2000": {"reading_rows": 20},
+        }
+    }
+    (out_dir / "manifest.json").write_text(json.dumps(manifest))
+
+    # Run extract_all with --catchup and --end corresponding to epoch 2000
+    # Provide no API key: it must exit 0 without attempting any client connection
+    monkeypatch.setenv("BROODMINDER_API_KEY", "")
+    monkeypatch.setattr("sys.argv", [
+        "extract_all.py", "--catchup", "--end", "1970-01-01", "--out", str(out_dir)
+    ])
+    assert ex.main() == 0
+
+    captured = capsys.readouterr()
+    assert "already up to date" in captured.out
+    assert "0 API calls" in captured.out
+

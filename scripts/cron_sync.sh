@@ -23,10 +23,14 @@ ts() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
 mkdir -p "$DIR/data"
 
-# Acquire exclusive lock to prevent overlapping sync runs
+# Acquire exclusive lock to prevent overlapping sync or backfill runs
+if ! command -v flock >/dev/null 2>&1; then
+    echo "=== $(ts) sync run failed: flock command not found ===" >> "$LOG"
+    exit 1
+fi
 exec 200>"$LOCKFILE"
 if ! flock -n 200; then
-    echo "=== $(ts) sync run skipped: another sync process holds the lock ===" >> "$LOG"
+    echo "=== $(ts) sync run skipped: another sync or backfill process holds the lock ===" >> "$LOG"
     exit 0
 fi
 

@@ -148,6 +148,13 @@ def main() -> int:
         print(f"already up to date through {end_dt:%Y-%m-%d} (start={start} >= end={end}). Nothing to extract.")
         return 0
 
+    if args.catchup and not args.apiary and completed:
+        known_hives = {k.rsplit("|", 2)[0] for k in completed if len(k.rsplit("|", 2)) == 3}
+        if known_hives and all(get_hive_resume_start(manifest, hid, start) >= end for hid in known_hives):
+            end_dt = datetime.fromtimestamp(end, tz=timezone.utc)
+            print(f"already up to date through {end_dt:%Y-%m-%d} across all {len(known_hives)} hives (manifest check). 0 API calls.")
+            return 0
+
     window = args.window_days * 24 * 60 * 60
 
     def save_manifest():
@@ -181,7 +188,7 @@ def main() -> int:
                     if h_start < end:
                         all_caught_up = False
                         break
-                if all_caught_up:
+                if hives and all_caught_up:
                     end_dt = datetime.fromtimestamp(end, tz=timezone.utc)
                     print(f"already up to date through {end_dt:%Y-%m-%d} across all {len(hives)} hives. Nothing to extract.")
                     return 0

@@ -11,9 +11,6 @@ Also enforces the dev-lead caller-stub channel pin
 dev-lead/<channel>` and pin the reusable's `uses:` ref to the same channel.
 
 Ref: petry-projects/.github/standards/ci-standards.md#dev-lead-agent
-
-These are text-based checks so they run without extra dependencies (CI only
-installs requirements.txt, which has no YAML parser).
 """
 
 from __future__ import annotations
@@ -22,6 +19,7 @@ import re
 from pathlib import Path
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
@@ -36,7 +34,7 @@ DEV_LEAD_CHANNEL = re.compile(r"^dev-lead/(v\d+-)?(stable|next|ring\d+)$")
 
 def _ci_text() -> str:
     assert CI_WORKFLOW.exists(), f"{CI_WORKFLOW} is missing"
-    return CI_WORKFLOW.read_text()
+    return CI_WORKFLOW.read_text(encoding="utf-8")
 
 
 def test_ci_has_gitleaks_secret_scan_job():
@@ -120,7 +118,7 @@ def test_dev_lead_channel_regex_rejects_malformed_forms(ref):
 
 def _dev_lead_text() -> str:
     assert DEV_LEAD_WORKFLOW.exists(), f"{DEV_LEAD_WORKFLOW} is missing"
-    return DEV_LEAD_WORKFLOW.read_text()
+    return DEV_LEAD_WORKFLOW.read_text(encoding="utf-8")
 
 
 def test_dev_lead_stub_passes_valid_agent_ref():
@@ -173,19 +171,23 @@ def test_dev_lead_uses_ref_matches_agent_ref():
 # Ref: petry-projects/.github/standards/ci-standards.md#centralization-tiers
 
 
-def _pr_auto_review_text() -> str:
+def _pr_auto_review_workflow() -> dict:
     assert PR_AUTO_REVIEW_WORKFLOW.exists(), f"{PR_AUTO_REVIEW_WORKFLOW} is missing"
-    return PR_AUTO_REVIEW_WORKFLOW.read_text(encoding="utf-8")
+    text = PR_AUTO_REVIEW_WORKFLOW.read_text(encoding="utf-8")
+    return yaml.safe_load(text)
 
 
 @pytest.mark.compliance
 def test_pr_auto_review_declares_concurrency_block():
     """The stub must declare a top-level `concurrency:` block (not nested under a
     job) so default-branch-context triggers dedupe per PR."""
-    text = _pr_auto_review_text()
-    assert re.search(r"^concurrency:\s*$", text, re.MULTILINE), (
+    workflow = _pr_auto_review_workflow()
+    assert "concurrency" in workflow, (
         "pr-auto-review.yml must declare a top-level `concurrency:` block "
         "re-synced from standards/workflows/pr-auto-review.yml"
+    )
+    assert isinstance(workflow["concurrency"], dict), (
+        "concurrency must be a mapping (not nested under a job)"
     )
 
 
@@ -195,16 +197,32 @@ def test_pr_auto_review_concurrency_group_matches_canonical():
     expressions: check_suite and workflow_run collapse onto a per-PR group and
     cancel in progress; every other context falls back to a unique-per-run
     group that never cancels."""
-    text = _pr_auto_review_text()
-    for needle in (
+    workflow = _pr_auto_review_workflow()
+    assert "concurrency" in workflow
+    concurrency = workflow["concurrency"]
+
+    group = concurrency.get("group")
+    assert group, "concurrency.group must be defined"
+    group_str = str(group)
+
+    required_expressions = [
         "github.event.check_suite.pull_requests[0].number",
         "github.event.workflow_run.pull_requests[0].number",
         "format('pr-auto-review-ready-check-pr-{0}'",
         "format('pr-auto-review-ready-check-unique-{0}', github.run_id)",
-        "cancel-in-progress: ${{ github.event_name == 'check_suite' "
-        "|| github.event_name == 'workflow_run' }}",
-    ):
-        assert needle in text, (
-            f"pr-auto-review.yml concurrency surface has drifted from canonical; "
-            f"missing: {needle!r}"
+    ]
+    for expr in required_expressions:
+        assert expr in group_str, (
+            f"pr-auto-review.yml concurrency.group has drifted from canonical; "
+            f"missing expression: {expr!r}"
         )
+
+    cancel_in_progress = concurrency.get("cancel-in-progress")
+    assert cancel_in_progress, "concurrency.cancel-in-progress must be defined"
+    cancel_str = str(cancel_in_progress)
+    assert "github.event_name == 'check_suite'" in cancel_str, (
+        "cancel-in-progress must check for check_suite event"
+    )
+    assert "github.event_name == 'workflow_run'" in cancel_str, (
+        "cancel-in-progress must check for workflow_run event"
+    )

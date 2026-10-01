@@ -18,6 +18,7 @@ import csv
 import gzip
 import io
 import json
+import os
 import sys
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -52,6 +53,10 @@ def iter_reading_files(hdir: Path):
 
 def iter_note_files(hdir: Path):
     yield from sorted(list(hdir.glob("*.notes.json")) + list(hdir.glob("*.notes.json.gz")))
+
+
+# Baseline of known metrics observed in production to guarantee a fixed CSV header.
+KNOWN_METRIC_KEYS = {"audio", "humidity", "radar", "swarmState", "temperature", "weight"}
 
 
 def iter_readings(hdir: Path):
@@ -91,17 +96,17 @@ def build_row(hid: str, m: dict, pid, r: dict) -> dict:
     }
 
 
-def iter_hive_rows(hdir: Path, m: dict):
+def iter_hive_rows(hdir: Path, m: dict, seen: set | None = None):
     """Yield deduped rows for one hive dir. Overlapping/re-fetched windows can
     repeat the same (position, device, timestamp); dedupe within the hive
     (reset per hive to bound memory)."""
     hid = hdir.name
-    seen: set = set()
+    hive_seen = seen if seen is not None else set()
     for pid, r in iter_readings(hdir):
         dk = (pid, r.get("deviceId"), r.get("timestamp"))
-        if dk in seen:
+        if dk in hive_seen:
             continue
-        seen.add(dk)
+        hive_seen.add(dk)
         yield build_row(hid, m, pid, r)
 
 
@@ -117,28 +122,45 @@ def accumulate_coverage(coverage: defaultdict, row: dict) -> None:
         c["max_ts"] = ts if c["max_ts"] is None else max(c["max_ts"], ts)
 
 
-def write_notes(path: Path, meta: dict, raw: Path = RAW) -> int:
+def write_notes(path: Path, meta: dict, raw: Path = RAW, merge: bool = False, existing_target: Path | None = None) -> int:
     """Notes are small — flatten them to plain ndjson. Returns the row count."""
     n_notes = 0
+    seen_notes: set = set()
     with path.open("w", encoding="utf-8") as fh:
-        for hdir in sorted(raw.iterdir()):
-            if not hdir.is_dir():
-                continue
-            hid = hdir.name
-            m = meta.get(hid, {})
-            for f in iter_note_files(hdir):
-                payload = load_json(f)
-                items = payload if isinstance(payload, list) else (payload or {}).get("notes", [])
-                for n in items or []:
-                    fh.write(json.dumps({"hiveId": hid, "hiveName": m.get("hiveName"), **n}) + "\n")
+        if merge and existing_target and existing_target.exists() and existing_target.stat().st_size > 0:
+            with existing_target.open("r", encoding="utf-8") as in_notes:
+                for line in in_notes:
+                    if not line.strip():
+                        continue
+                    note = json.loads(line)
+                    nk = (note.get("hiveId"), note.get("id") or (note.get("created"), note.get("description")))
+                    seen_notes.add(nk)
+                    fh.write(line if line.endswith("\n") else line + "\n")
                     n_notes += 1
+
+        if raw.exists():
+            for hdir in sorted(raw.iterdir()):
+                if not hdir.is_dir():
+                    continue
+                hid = hdir.name
+                m = meta.get(hid, {})
+                for f in iter_note_files(hdir):
+                    payload = load_json(f)
+                    items = payload if isinstance(payload, list) else (payload or {}).get("notes", [])
+                    for n in items or []:
+                        nk = (hid, n.get("id") or (n.get("created"), n.get("description")))
+                        if nk in seen_notes:
+                            continue
+                        seen_notes.add(nk)
+                        fh.write(json.dumps({"hiveId": hid, "hiveName": m.get("hiveName"), **n}) + "\n")
+                        n_notes += 1
     return n_notes
 
 
 def build_coverage(coverage: dict, meta: dict) -> dict:
     """Render the accumulated coverage tally into the serializable summary."""
     cov_out = {}
-    for hid, c in coverage.items():
+    for hid, c in sorted(coverage.items()):
         m = meta.get(hid, {})
         cov_out[hid] = {
             "apiaryName": m.get("apiaryName"), "hiveName": m.get("hiveName"),
@@ -154,9 +176,11 @@ def build_coverage(coverage: dict, meta: dict) -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--no-csv", action="store_true", help="skip the (large) CSV output")
+    ap.add_argument("--merge", action="store_true",
+                    help="merge incremental raw windows into existing readings and notes outputs")
     args = ap.parse_args()
 
-    if not RAW.exists():
+    if not RAW.exists() and not args.merge:
         print("no raw data yet; run extract_all.py first", file=sys.stderr)
         return 1
 
@@ -166,40 +190,98 @@ def main() -> int:
     base_cols = ["apiaryId", "apiaryName", "hiveId", "hiveName", "positionID",
                  "deviceId", "timestamp", "datetime", "batteryLevel", "chargeRemaining"]
 
-    # Pass 1: discover metric keys (stable, tiny set) so CSV has a fixed header.
-    # Skip this full scan when CSV output is disabled — the header isn't needed.
-    metric_keys = discover_metric_keys(RAW) if not args.no_csv else set()
+    target_ndjson = OUT / "readings.ndjson.gz"
+    target_csv = OUT / "readings.csv.gz"
+    target_notes = OUT / "notes.ndjson"
+
+    # Pass 1: discover metric keys, unioned with KNOWN_METRIC_KEYS for fixed header stability.
+    metric_keys: set[str] = set(KNOWN_METRIC_KEYS)
+    if RAW.exists() and not args.no_csv:
+        metric_keys.update(discover_metric_keys(RAW))
+
+    # In merge mode, include any existing m_* metrics already in the archive
+    # so historical fields remain in the rebuilt CSV even if raw files were purged.
+    if args.merge and target_ndjson.exists() and target_ndjson.stat().st_size > 0:
+        with gzip.open(target_ndjson, "rt", encoding="utf-8") as in_fh:
+            for line in in_fh:
+                if not line.strip():
+                    continue
+                for key in json.loads(line):
+                    if key.startswith("m_") and len(key) > 2:
+                        metric_keys.add(key[2:])
+
     metric_cols = [f"m_{k}" for k in sorted(metric_keys)]
 
-    # Pass 2: stream rows to gzipped ndjson (+ optional gzipped csv).
     coverage = defaultdict(lambda: {"rows": 0, "min_ts": None, "max_ts": None,
                                     "devices": set(), "positions": set()})
+    seen: dict[str, set] = defaultdict(set)
     n_rows = 0
-    ndjson_fh = gzip.open(OUT / "readings.ndjson.gz", "wt", encoding="utf-8")
+
+    proc_id = os.getpid()
+    tmp_ndjson = OUT / f"readings.ndjson.gz.tmp.{proc_id}"
+    tmp_csv = OUT / f"readings.csv.gz.tmp.{proc_id}"
+    tmp_notes = OUT / f"notes.ndjson.tmp.{proc_id}"
+
+    ndjson_fh = gzip.open(tmp_ndjson, "wt", encoding="utf-8")
     csv_fh = csv_writer = None
     if not args.no_csv:
-        csv_fh = io.TextIOWrapper(gzip.open(OUT / "readings.csv.gz", "wb"), encoding="utf-8", newline="")
+        csv_fh = io.TextIOWrapper(gzip.open(tmp_csv, "wb"), encoding="utf-8", newline="")
         csv_writer = csv.DictWriter(csv_fh, fieldnames=base_cols + metric_cols)
         csv_writer.writeheader()
 
+    readings_success = False
     try:
-        for hdir in sorted(RAW.iterdir()):
-            if not hdir.is_dir():
-                continue
-            m = meta.get(hdir.name, {})
-            for row in iter_hive_rows(hdir, m):
-                ndjson_fh.write(json.dumps(row) + "\n")
-                if csv_writer:
-                    csv_writer.writerow({k: row.get(k) for k in base_cols + metric_cols})
-                n_rows += 1
-                accumulate_coverage(coverage, row)
+        if args.merge and target_ndjson.exists() and target_ndjson.stat().st_size > 0:
+            with gzip.open(target_ndjson, "rt", encoding="utf-8") as in_fh:
+                for line in in_fh:
+                    row = json.loads(line)
+                    hid = row.get("hiveId")
+                    pid = row.get("positionID")
+                    did = row.get("deviceId")
+                    ts = row.get("timestamp")
+                    seen[hid].add((pid, did, ts))
+                    ndjson_fh.write(line if line.endswith("\n") else line + "\n")
+                    if csv_writer:
+                        csv_writer.writerow({k: row.get(k) for k in base_cols + metric_cols})
+                    n_rows += 1
+                    accumulate_coverage(coverage, row)
+
+        if RAW.exists():
+            for hdir in sorted(RAW.iterdir()):
+                if not hdir.is_dir():
+                    continue
+                m = meta.get(hdir.name, {})
+                hive_seen = seen[hdir.name] if args.merge else None
+                for row in iter_hive_rows(hdir, m, hive_seen):
+                    ndjson_fh.write(json.dumps(row) + "\n")
+                    if csv_writer:
+                        csv_writer.writerow({k: row.get(k) for k in base_cols + metric_cols})
+                    n_rows += 1
+                    accumulate_coverage(coverage, row)
+        readings_success = True
     finally:
         ndjson_fh.close()
         if csv_fh:
             csv_fh.close()
+        if not readings_success:
+            tmp_ndjson.unlink(missing_ok=True)
+            tmp_csv.unlink(missing_ok=True)
 
-    # Notes (small) -> plain ndjson
-    n_notes = write_notes(OUT / "notes.ndjson", meta)
+    if tmp_ndjson.exists():
+        tmp_ndjson.replace(target_ndjson)
+    if not args.no_csv and tmp_csv.exists():
+        tmp_csv.replace(target_csv)
+
+    notes_success = False
+    try:
+        n_notes = write_notes(tmp_notes, meta, raw=RAW, merge=args.merge, existing_target=target_notes)
+        notes_success = True
+    finally:
+        if not notes_success and tmp_notes.exists():
+            tmp_notes.unlink(missing_ok=True)
+
+    if tmp_notes.exists():
+        tmp_notes.replace(target_notes)
 
     cov_out = build_coverage(coverage, meta)
     (OUT / "coverage.json").write_text(json.dumps(cov_out, indent=2))

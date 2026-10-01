@@ -93,6 +93,41 @@ def load_manifest(path: Path) -> dict:
     return {"completed": {}, "meta": {}}
 
 
+def get_manifest_max_end(manifest: dict) -> int | None:
+    """Find the latest completed window end timestamp across all hives."""
+    completed = manifest.get("completed", {})
+    if not completed:
+        return None
+    ends = []
+    for k in completed.keys():
+        parts = k.rsplit("|", 2)
+        if len(parts) == 3:
+            try:
+                ends.append(int(parts[2]))
+            except ValueError:
+                pass
+    return max(ends) if ends else None
+
+
+def get_hive_resume_start(manifest: dict, hive_id: str | int, default_start: int) -> int:
+    """Find the resume start timestamp for a specific hive based on completed windows.
+
+    Resumes from the latest completed window end timestamp for this hive, or falls back
+    to default_start if no prior completed windows exist for the hive.
+    """
+    completed = manifest.get("completed", {})
+    hid_str = str(hive_id)
+    ends = []
+    for k in completed.keys():
+        parts = k.rsplit("|", 2)
+        if len(parts) == 3 and parts[0] == hid_str:
+            try:
+                ends.append(int(parts[2]))
+            except ValueError:
+                pass
+    return max(ends) if ends else default_start
+
+
 class _BudgetExhausted(Exception):
     """Raised by process_hive when the call budget is reached; caught in main."""
 
@@ -199,18 +234,10 @@ def main() -> int:
     p.add_argument("--stop-after-empty", type=int, default=0,
                    help="with --reverse: stop a hive after N consecutive empty "
                         "windows (saves calls on hives with no old data; 0=off)")
+    p.add_argument("--catchup", action="store_true",
+                   help="resume forward from each hive's latest completed window in manifest.json")
     args = p.parse_args()
 
-    start = parse_date(args.start)
-    # Snap the open end to midnight UTC so re-runs within a day reuse the same
-    # window key (stable resume; the live now-epoch would otherwise mint a new
-    # key each run and re-fetch the final window). Today's partial data is
-    # picked up on the next day's run.
-    if args.end:
-        end = parse_date(args.end)
-    else:
-        end = now_epoch() // 86400 * 86400
-    window = args.window_days * 24 * 60 * 60
     # Normalize the CLI-supplied output root once; every write below is proven
     # (via resolve_within) to stay inside it, so a hostile --out or hive id
     # can't traverse out of the extract tree (pythonsecurity:S8707).
@@ -221,6 +248,24 @@ def main() -> int:
     manifest = load_manifest(manifest_path)
     completed: dict = manifest["completed"]
 
+    start = parse_date(args.start)
+
+    # Snap the open end to midnight UTC so re-runs within a day reuse the same
+    # window key (stable resume; the live now-epoch would otherwise mint a new
+    # key each run and re-fetch the final window). Today's partial data is
+    # picked up on the next day's run.
+    if args.end:
+        end = parse_date(args.end)
+    else:
+        end = now_epoch() // 86400 * 86400
+
+    if not args.catchup and start >= end:
+        end_dt = datetime.fromtimestamp(end, tz=timezone.utc)
+        print(f"already up to date through {end_dt:%Y-%m-%d} (start={start} >= end={end}). Nothing to extract.")
+        return 0
+
+    window = args.window_days * 24 * 60 * 60
+
     def save_manifest():
         manifest["meta"] = {
             "start": start, "end": end, "window_days": args.window_days,
@@ -228,21 +273,44 @@ def main() -> int:
         }
         manifest_path.write_text(json.dumps(manifest, indent=2))
 
+    try:
+        bm_client = BroodMinderClient()
+    except BroodMinderError as ex:
+        print(f"✗ Client initialization error: {ex}", file=sys.stderr)
+        return 1
+
     stopped_early = False
     wins = list(iter_windows(start, end, window))
-    with BroodMinderClient() as bm:
+    with bm_client as bm:
         try:
             # The very first call can itself be rate-limited; keep it inside the
             # handler so a 429 here exits cleanly (resumable) rather than crashing.
             apiaries = select_apiaries(bm.apiaries(), args.apiary)
             hives = [(a, h) for a in apiaries for h in a.get("hives", [])]
+            if args.catchup:
+                all_caught_up = True
+                for a, h in hives:
+                    h_start = get_hive_resume_start(manifest, h["hiveId"], start)
+                    if h_start < end:
+                        all_caught_up = False
+                        break
+                if hives and all_caught_up:
+                    end_dt = datetime.fromtimestamp(end, tz=timezone.utc)
+                    print(f"already up to date through {end_dt:%Y-%m-%d} across all {len(hives)} hives. Nothing to extract.")
+                    return 0
+
             print(f"scope: {len(apiaries)} apiaries, {len(hives)} hives")
             print(f"range: {args.start} .. {args.end or 'now'}  "
                   f"({len(wins)} windows/hive)")
             print(f"budget: stop at {args.max_calls} calls (already used {bm.call_count})\n")
 
-            hive_wins = list(reversed(wins)) if args.reverse else wins
             for a, h in hives:
+                hid = h["hiveId"]
+                hive_start = get_hive_resume_start(manifest, hid, start) if args.catchup else start
+                if hive_start >= end:
+                    continue
+                h_wins = list(iter_windows(hive_start, end, window))
+                hive_wins = list(reversed(h_wins)) if args.reverse else h_wins
                 process_hive(bm, a, h, hive_wins, args, raw, completed, save_manifest)
         except _BudgetExhausted:
             stopped_early = True

@@ -1,7 +1,8 @@
-# Contributing to broodminder-export
+# Contributing to broodminder-data
 
-Thanks for helping make it easier for beekeepers to own their data! This is a
-small, focused tool — contributions that improve extraction reliability, fix
+Thanks for helping make BroodMinder beehive data easily accessible across bulk
+export, periodic delta sync, OpenAPI, and AI agents via MCP! Contributions that
+improve extraction reliability, expand CLI/SDK features, add agent tooling, fix
 API-behavior drift, or sharpen the docs/OpenAPI spec are very welcome.
 
 ## Ground rules

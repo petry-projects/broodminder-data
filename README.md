@@ -1,70 +1,101 @@
-# 🐝 broodminder-export
+# 🐝 broodminder-data
 
-[![CI](https://github.com/petry-projects/broodminder-export/actions/workflows/ci.yml/badge.svg)](https://github.com/petry-projects/broodminder-export/actions/workflows/ci.yml)
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=petry-projects_broodminder-export&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=petry-projects_broodminder-export)
+[![CI](https://github.com/petry-projects/broodminder-data/actions/workflows/ci.yml/badge.svg)](https://github.com/petry-projects/broodminder-data/actions/workflows/ci.yml)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=petry-projects_broodminder-export2&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=petry-projects_broodminder-export2)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![OpenAPI 3.1](https://img.shields.io/badge/OpenAPI-3.1-brightgreen.svg)](openapi.yaml)
+[![MCP Ready](https://img.shields.io/badge/MCP-Ready-purple.svg)](https://modelcontextprotocol.io/)
 
-**Get *all* of your data out of the [BroodMinder](https://broodminder.com) cloud — apiaries, hives, devices, every sensor reading, and notes — into plain, portable files you own.**
+**Make [BroodMinder](https://broodminder.com) beehive data easily accessible across diverse consumption use cases — bulk export, periodic delta sync, OpenAPI 3.1, and AI agents via MCP.**
 
-`broodminder-export` is a small, dependency-light Python tool that talks to the
-BroodMinder External User API and pulls your complete history into gzipped JSON,
-NDJSON, and CSV. It is **resumable**, **rate-limit-aware**, and **idempotent**,
-so even large multi-apiary accounts with years of history extract reliably within
-the API's daily quota.
+`broodminder-data` (formerly `broodminder-export`) provides a unified developer platform for BroodMinder beehive sensor telemetry (internal/ambient temperature, relative humidity, scale weight, swarm indicators, acoustics, radar, and inspection notes). Similar to [`empower-personal-dashboard`](https://github.com/petry-projects/empower-personal-dashboard), this project provides a **published OpenAPI 3.1 specification**, a **Python CLI and client SDK**, and a **Model Context Protocol (MCP) server** for AI agents.
 
 > [!IMPORTANT]
 > **Unofficial.** Not affiliated with or endorsed by BroodMinder. It uses the
 > public External User API with *your own* API key. The bundled
-> [OpenAPI spec](openapi/broodminder-openapi.yaml) is reverse-engineered from
-> observed behavior — corrections via PR are welcome.
+> [OpenAPI spec](openapi/broodminder-openapi.yaml) (symlinked to [`openapi.yaml`](openapi.yaml))
+> is reverse-engineered from observed live behavior — corrections via PR are welcome.
 
 ---
 
-## Table of contents
+## 5 Core Consumption Modalities
 
-- [Why](#why)
+```
+                     ┌──────────────────────────────────────────────┐
+                     │         BroodMinder Cloud API               │
+                     └──────────────────────┬───────────────────────┘
+                                            │
+                                ┌───────────▼───────────┐
+                                │   broodminder-data    │
+                                └───────────┬───────────┘
+                                            │
+         ┌──────────────────┬───────────────┼───────────────┬──────────────────┐
+         ▼                  ▼               ▼               ▼                  ▼
+  📦 Bulk Export      🔄 Delta Sync   📜 OpenAPI 3.1   🤖 MCP Server    🐍 Python SDK / CLI
+  Full history       Incremental     Published spec   Claude, Cursor,   Typed models &
+  JSON / CSV / NDJSON catch-up cron   & Redocly docs   Antigravity CLI   scriptable client
+```
+
+1. **📦 Bulk Historical Export**: Walks your entire apiary → hive → device hierarchy with rate-limit-aware, resumable 180-day windowing to extract complete multi-year histories into compressed JSON, NDJSON, and CSV.
+2. **🔄 Periodic Delta Sync**: Lightweight, incremental polling engine designed for regular cron or background services, fetching only new readings since the last checkpoint while buffering for late-arriving BLE uploads.
+3. **📜 Published OpenAPI 3.1 Specification**: Formal, validated OpenAPI 3.1 contract covering all observed endpoints, query parameters, error responses (including HTTP 412 auth responses), and canonical telemetry schemas.
+4. **🤖 Model Context Protocol (MCP) Server**: Native MCP integration (`broodminder-mcp`) connecting AI agents (**Claude Desktop, Antigravity CLI, Cursor, Windsurf, Claude Code**) directly to hive metrics, temperature trends, weight deltas, and notes.
+5. **🐍 Unified Python Client Library & CLI**: Strongly-typed domain models, offline sandbox mode, and a standalone `broodminder` CLI.
+
+---
+
+## Architecture Discussions & Roadmap
+
+We are tracking each expanded capability in GitHub Discussions. Join the conversation:
+
+- 💬 [**Discussion #148: Periodic Delta Sync Engine for Incremental Telemetry & Continuous Ingestion**](https://github.com/petry-projects/broodminder-data/discussions/148)
+- 💬 [**Discussion #149: Published OpenAPI 3.1 Specification & Interactive Documentation (Redocly/Swagger)**](https://github.com/petry-projects/broodminder-data/discussions/149)
+- 💬 [**Discussion #150: Model Context Protocol (MCP) Server for Hive Monitoring & AI Agent Integration**](https://github.com/petry-projects/broodminder-data/discussions/150)
+- 💬 [**Discussion #151: Unified Python Client SDK and Standalone CLI Library**](https://github.com/petry-projects/broodminder-data/discussions/151)
+
+---
+
+## Table of Contents
+
 - [Features](#features)
-- [What you get](#what-you-get)
-- [Get an API key](#get-an-api-key)
-- [Install](#install)
-- [Configure](#configure)
-- [Usage](#usage)
-- [Full-history extraction](#full-history-extraction)
-- [Output files](#output-files)
-- [How it works](#how-it-works)
-- [API behavior (observed)](#api-behavior-observed)
-- [Testing](#testing)
-- [Project structure](#project-structure)
-- [Privacy](#privacy)
+- [What You Get](#what-you-get)
+- [Get an API Key](#get-an-api-key)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Quickstart Usage](#quickstart-usage)
+  - [1. Discover Account Topology](#1-discover-account-topology)
+  - [2. Bulk History Export](#2-bulk-history-export)
+  - [3. Incremental Catch-up Sync](#3-incremental-catch-up-sync)
+  - [4. Build Analysis-Ready Datasets](#4-build-analysis-ready-datasets)
+- [OpenAPI 3.1 Specification & Interactive Docs](#openapi-31-specification--interactive-docs)
+- [Model Context Protocol (MCP) Server](#model-context-protocol-mcp-server)
+- [Python SDK Usage](#python-sdk-usage)
+- [Output Files & Schema](#output-files--schema)
+- [API Behavior & Rate Limits](#api-behavior--rate-limits)
+- [Testing & Quality Gates](#testing--quality-gates)
+- [Project Structure](#project-structure)
+- [Privacy & Security](#privacy--security)
 - [Contributing](#contributing)
 - [License](#license)
 
-## Why
-
-The BroodMinder app and web app are great, but your data lives in their cloud.
-If you want to run your own analytics, build dashboards, train models, keep an
-archive you control, or migrate elsewhere, you need a clean export. That's all
-this does — reliably, and completely.
+---
 
 ## Features
 
-- 📦 **Complete export** — walks every apiary → hive → device and pulls all
-  readings and notes across your entire history.
-- 🔁 **Resumable** — checkpoints each time window; stop and re-run anytime and it
-  skips what's already fetched.
-- 🚦 **Rate-limit-aware** — respects the ~1000 calls/day cap, self-throttles, and
-  resumes cleanly after a `429`.
-- 🧹 **Idempotent outputs** — de-duplicates overlapping windows, so re-runs never
-  double-count.
-- 🗜️ **Compact** — raw and flattened outputs are gzipped (a multi-year, 90-hive
-  account is tens of MB).
-- 🧪 **Contract-tested** — a live test suite pins the API's real behavior and acts
-  as a canary when it changes.
-- 🔌 **Reusable client** — `bm/client.py` is transport-clean and easy to lift into
-  a notebook, service, or MCP server.
+- 📦 **Complete export** — walks every apiary → hive → device and pulls all readings and notes across your entire history.
+- 🔁 **Resumable** — checkpoints each time window; stop and re-run anytime and it skips what's already fetched.
+- 🚦 **Rate-limit-aware** — respects the ~1000 calls/day cap, self-throttles, and resumes cleanly after a `429`.
+- 🧹 **Idempotent outputs** — de-duplicates overlapping windows, so re-runs never double-count.
+- 🗜️ **Compact** — raw and flattened outputs are gzipped (a multi-year, 90-hive account is tens of MB).
+- 📜 **OpenAPI 3.1 spec** — formal machine-readable API definition with Redocly validation.
+- 🤖 **Agent-ready** — MCP server architecture for conversational hive analysis and automated inspections.
+- 🧪 **Contract-tested** — live contract test suite pins the API's real behavior and acts as a canary when upstream changes.
+- 🔌 **Reusable client** — `bm/client.py` is transport-clean and easy to lift into a notebook, script, or MCP server.
 
-## What you get
+---
+
+## What You Get
 
 A flattened, analysis-ready row per reading:
 
@@ -85,26 +116,36 @@ A flattened, analysis-ready row per reading:
 > Metric presence varies by device type — temperature is near-universal; weight
 > appears only on hives with a scale; audio and radar appear on specialized monitors.
 
-## Get an API key
+---
+
+## Get an API Key
 
 The External User API is in alpha. Request a key from BroodMinder
-(support@broodminder.com). The key is tied to your account and only authorizes
+([support@broodminder.com](mailto:support@broodminder.com)). The key is tied to your account and only authorizes
 access to your own data.
 
-## Install
+---
+
+## Installation
 
 ```bash
-git clone https://github.com/petry-projects/broodminder-export.git
-cd broodminder-export
+git clone https://github.com/petry-projects/broodminder-data.git
+cd broodminder-data
 
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
-Requires **Python 3.10+**. Runtime dependencies: `httpx`, `python-dotenv`
-(`pytest` for the test suite).
+Requires **Python 3.10+**.
 
-## Configure
+To install with optional MCP agent support:
+```bash
+.venv/bin/pip install -e ".[mcp]"
+```
+
+---
+
+## Configuration
 
 ```bash
 cp .env.example .env
@@ -119,24 +160,23 @@ BROODMINDER_BASE_URL=https://external-api.mybroodminder.com
 
 `.env` is git-ignored and never leaves your machine.
 
-## Usage
+---
 
+## Quickstart Usage
+
+### 1. Discover Account Topology
+Confirm auth and see your apiaries, hives, and a sensor data sample:
 ```bash
-# 1. Confirm auth + see your account topology (apiaries, hives, a data sample)
 .venv/bin/python scripts/discover.py
-
-# 2. Pull history (resumable; stops before the daily cap)
-.venv/bin/python scripts/extract_all.py --start 2025-01-01
-
-# 3. Catch up forward from your latest extracted window
-.venv/bin/python scripts/extract_all.py --catchup
-
-# 4. Build analysis-ready NDJSON + CSV (use --merge to preserve existing data)
-.venv/bin/python scripts/flatten.py --merge
 ```
 
-`extract_all.py` options:
+### 2. Bulk History Export
+Pull historical telemetry (resumable; respects the daily quota):
+```bash
+.venv/bin/python scripts/extract_all.py --start 2025-01-01
+```
 
+Options:
 | flag | default | purpose |
 |---|---|---|
 | `--start YYYY-MM-DD` | `2021-01-01` | history start |
@@ -149,49 +189,96 @@ BROODMINDER_BASE_URL=https://external-api.mybroodminder.com
 | `--stop-after-empty N` | `0` | with `--reverse`, stop a hive after N empty windows |
 | `--no-notes` | off | skip the notes endpoint |
 
-`flatten.py` options:
-
-| flag | default | purpose |
-|---|---|---|
-| `--merge` | off | merge incremental raw windows into existing outputs |
-| `--no-csv` | off | skip generating `readings.csv.gz` |
-
-## Full-history extraction
-
-The API is capped at **~1000 calls/day**. A small account finishes in one run;
-a large one (many hives, several years) spans a few days. The extractor is
-**resumable** — just run it again and it skips windows already recorded in
-`data/extract/manifest.json`.
-
-To walk *backwards* to the beginning of your data while skipping hives that have
-no old data, use **backfill mode**:
-
+### 3. Incremental Catch-up Sync
+Resume forward from each hive's latest extracted window:
 ```bash
-.venv/bin/python scripts/extract_all.py \
-    --start 2016-01-01 --end 2025-01-01 \
-    --reverse --stop-after-empty 3
+.venv/bin/python scripts/extract_all.py --catchup
 ```
 
-For a fully unattended, multi-day backfill, [`scripts/cron_backfill.sh`](scripts/cron_backfill.sh)
-runs the resumable backfill + flatten on a schedule (idempotent, safe to repeat):
-
+### 4. Build Analysis-Ready Datasets
+Convert raw windows into clean, de-duplicated NDJSON and CSV:
 ```bash
-( crontab -l 2>/dev/null; \
-  echo "20 */6 * * * $(pwd)/scripts/cron_backfill.sh" ) | crontab -
+.venv/bin/python scripts/flatten.py --merge
 ```
 
-For routine ongoing catch-up exports after the initial backfill is complete,
-[`scripts/cron_sync.sh`](scripts/cron_sync.sh) pulls only new windows forward and
-merges them:
+---
+
+## OpenAPI 3.1 Specification & Interactive Docs
+
+`broodminder-data` maintains a formal [OpenAPI 3.1 specification](openapi/broodminder-openapi.yaml) (also accessible via the root symlink [`openapi.yaml`](openapi.yaml)).
+
+### Local Linting & Preview
+Using [Redocly CLI](https://redocly.com/docs/cli/):
 
 ```bash
-( crontab -l 2>/dev/null; \
-  echo "0 4 * * * $(pwd)/scripts/cron_sync.sh" ) | crontab -
+# Lint specification against OpenAPI 3.1 rules
+npx @redocly/cli lint openapi.yaml
+
+# Launch interactive documentation preview server
+npx @redocly/cli preview-docs openapi.yaml
 ```
 
-## Output files
+---
 
-Under `data/extract/` (git-ignored):
+## Model Context Protocol (MCP) Server
+
+Connect your hive data directly to AI agents (**Claude Desktop, Antigravity CLI, Cursor, Windsurf, Claude Code**):
+
+### Agent Configuration (`claude_desktop_config.json` or `mcp.json`)
+
+```json
+{
+  "mcpServers": {
+    "broodminder": {
+      "command": "python3",
+      "args": ["-m", "bm.mcp_server"],
+      "env": {
+        "BROODMINDER_API_KEY": "your-api-key-here"
+      }
+    }
+  }
+}
+```
+
+### Core MCP Tools
+- `get_apiary_summary`: High-level inventory of apiaries, hives, and device counts.
+- `get_hive_status`: Latest sensor telemetry (brood temperature, ambient temperature, humidity, weight).
+- `get_telemetry_trends`: Time-series rollups (min, max, mean, delta) over specified lookback windows.
+- `get_hive_notes`: Recent inspection notes, treatments, and queen observations.
+- `get_device_health`: Battery levels and sync freshness across sensors.
+
+---
+
+## Python SDK Usage
+
+```python
+from bm.client import BroodMinderClient
+
+# Automatically reads BROODMINDER_API_KEY from environment or .env
+client = BroodMinderClient()
+
+# List apiaries and hives
+apiaries = client.get_apiaries()
+for apiary in apiaries:
+    print(f"Apiary: {apiary['name']} (ID: {apiary['apiary_id']})")
+    hives = client.get_hives(apiary_id=apiary['apiary_id'])
+    for hive in hives:
+        print(f"  - Hive: {hive['name']}")
+
+# Fetch time-series readings for a device (epoch seconds)
+readings = client.get_device_readings(
+    device_id="42:11:22:33:44:55",
+    start=1704067200,  # 2024-01-01T00:00:00Z
+    end=1706745600,    # 2024-02-01T00:00:00Z
+)
+print(f"Fetched {len(readings)} readings")
+```
+
+---
+
+## Output Files & Schema
+
+Extracted data is saved under `data/extract/` (git-ignored):
 
 | file | contents |
 |---|---|
@@ -203,78 +290,76 @@ Under `data/extract/` (git-ignored):
 | `notes.ndjson` | one object per note |
 | `coverage.json` | per-hive earliest/latest reading + counts |
 
-## How it works
+---
 
-1. **`discover.py`** calls `/user/metadata/apiaries`, confirms auth, and dumps a
-   small sample so you can see your real schema before a big pull.
-2. **`extract_all.py`** iterates apiaries → hives, chunks the requested range into
-   ≤6-month windows (`iter_windows`), and writes each window's raw response to
-   disk, recording it in `manifest.json`. It counts API calls and stops before
-   `--max-calls`; a server `429` is caught, saved, and resumable.
-3. **`flatten.py`** reads the raw windows (no API calls), de-duplicates by
-   `(positionID, deviceId, timestamp)`, and emits NDJSON + CSV + a coverage
-   summary. Re-run it any time to rebuild outputs.
+## API Behavior & Rate Limits
 
-## API behavior (observed)
+The machine-readable description is in [`openapi.yaml`](openapi.yaml). Notable quirks handled automatically:
 
-The machine-readable description is in
-[`openapi/broodminder-openapi.yaml`](openapi/broodminder-openapi.yaml). Notable
-quirks this tool handles for you:
+- **Authentication:** `X-Api-Key` header. Missing or invalid keys return **HTTP 412** (not 401/403).
+- **Time Windows:** Maximum ~6 months per request — auto-chunked.
+- **No Pagination:** Each window is a single JSON array payload.
+- **Rate Limit:** ~1,000 calls per UTC day with no `Retry-After` header — the client tracks calls, self-throttles, and catches `429` responses cleanly.
 
-- **Auth** via `X-Api-Key`. A missing/invalid key returns **HTTP 412** (not the
-  usual 401/403).
-- **6-month window cap** per readings/notes request — chunked automatically.
-- **No pagination** — within a window the whole result is one JSON array (can be
-  several MB); there's no cursor and no "changed-since" delta endpoint, so the
-  tool windows by time and de-duplicates.
-- **Daily rate limit** (~1000/day; body `"daily limit exceeded"`) with no
-  `Retry-After` header — the tool self-throttles and resumes.
+---
 
-## Testing
+## Testing & Quality Gates
 
 ```bash
+# Run unit & offline tests
 .venv/bin/python -m pytest
+
+# Byte-compile verification
+python3 -m compileall bm scripts tests
 ```
 
-The contract suite hits the live API to validate every endpoint's shape and pin
-its real behavior. It **skips automatically** when `BROODMINDER_API_KEY` is
-unset (so CI and fresh clones stay green), and runs for real when a key is
-present.
+- **Offline tests (`tests/test_offline.py`, `tests/test_scripts_refactor.py`):** Run fast and hermetically without network access.
+- **Live contract tests (`tests/test_contract.py`):** Automatically run when `BROODMINDER_API_KEY` is present to verify live API compatibility; skip gracefully otherwise.
+- **OpenAPI validation:** `npx @redocly/cli lint openapi.yaml`.
 
-## Project structure
+---
+
+## Project Structure
 
 ```
-broodminder-export/
+broodminder-data/
 ├── bm/
 │   ├── __init__.py
-│   └── client.py            # reusable BroodMinderClient (auth, retry, windowing)
+│   └── client.py            # Reusable BroodMinderClient (auth, retry, windowing)
 ├── scripts/
-│   ├── discover.py          # auth check + topology/schema sample
-│   ├── extract_all.py       # resumable, budget-aware extraction (--catchup)
-│   ├── flatten.py           # raw → NDJSON/CSV/coverage (--merge)
-│   ├── cron_sync.sh         # routine unattended forward catch-up sync
-│   └── cron_backfill.sh     # initial unattended multi-day backfill
+│   ├── discover.py          # Auth check + account topology/schema sample
+│   ├── extract_all.py       # Resumable, budget-aware extraction (--catchup)
+│   ├── flatten.py           # Raw → NDJSON/CSV/coverage (--merge)
+│   ├── cron_sync.sh         # Routine unattended forward catch-up sync
+│   └── cron_backfill.sh     # Initial unattended multi-day backfill
 ├── tests/
 │   ├── conftest.py
-│   ├── test_offline.py      # fast deterministic unit tests (run in CI)
-│   └── test_contract.py     # live contract tests (skip without a key)
+│   ├── test_offline.py      # Fast deterministic unit tests
+│   ├── test_scripts_refactor.py # Script unit test coverage
+│   └── test_contract.py     # Live contract tests (skip without key)
 ├── openapi/
-│   └── broodminder-openapi.yaml
-├── requirements.txt
-└── pyproject.toml
+│   └── broodminder-openapi.yaml # OpenAPI 3.1 specification
+├── openapi.yaml -> openapi/broodminder-openapi.yaml # Root symlink
+├── redocly.yaml             # Redocly linting & preview configuration
+├── requirements.txt         # Runtime dependencies
+└── pyproject.toml           # Build configuration & metadata
 ```
 
-## Privacy
+---
 
-`.env` (your key) and `data/` (your extracted hive data) are **git-ignored** and
-never leave your machine. This repository contains code only. Please **never**
-paste an API key or raw hive data into an issue or PR.
+## Privacy & Security
+
+`.env` (your API key) and `data/` (your extracted hive data) are **git-ignored** and never leave your machine.
+All test fixtures use synthetic or anonymized values. Please **never** paste an API key or raw hive telemetry into an issue, PR, or discussion.
+
+---
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), and the
-[Code of Conduct](CODE_OF_CONDUCT.md). Bug reports about API drift — with a
-**redacted** sample — are especially useful.
+See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), and the [Code of Conduct](CODE_OF_CONDUCT.md).
+Check out open [Discussions](https://github.com/petry-projects/broodminder-data/discussions) to weigh in on upcoming features and architectural decisions.
+
+---
 
 ## License
 

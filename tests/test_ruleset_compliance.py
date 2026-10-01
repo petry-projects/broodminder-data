@@ -31,7 +31,7 @@ import pytest
 # so exempt from the BROODMINDER_API_KEY blanket skip.
 pytestmark = pytest.mark.compliance
 
-REPO_SLUG = os.environ.get("GITHUB_REPOSITORY", "petry-projects/broodminder-export")
+REPO_SLUG = os.environ.get("GITHUB_REPOSITORY", "petry-projects/broodminder-data")
 
 # The codified `pr-quality` ruleset name and the required pull-request parameter.
 RULESET_NAME = "pr-quality"

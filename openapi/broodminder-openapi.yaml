@@ -16,7 +16,7 @@ info:
       * Units and the meaning of `swarmState` are not documented and are guessed here.
   license:
     name: MIT
-    url: https://github.com/petry-projects/broodminder-export/blob/main/LICENSE
+    url: https://github.com/petry-projects/broodminder-data/blob/main/LICENSE
 
 servers:
   - url: https://external-api.mybroodminder.com

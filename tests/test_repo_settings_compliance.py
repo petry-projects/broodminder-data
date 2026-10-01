@@ -22,7 +22,7 @@ import pytest
 # credential (or skip), so exempt them from the BROODMINDER_API_KEY blanket skip.
 pytestmark = pytest.mark.compliance
 
-REPO_SLUG = os.environ.get("GITHUB_REPOSITORY", "petry-projects/broodminder-export")
+REPO_SLUG = os.environ.get("GITHUB_REPOSITORY", "petry-projects/broodminder-data")
 
 
 def repo_setting_enabled(repo_json: dict, setting: str) -> bool:

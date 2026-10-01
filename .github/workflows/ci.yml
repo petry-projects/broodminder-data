@@ -33,16 +33,70 @@ jobs:
       contents: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up Python
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        # Retry with backoff so a transient PyPI/network hiccup doesn't fail CI.
+        run: |
+          for attempt in 1 2 3; do
+            if pip install -r requirements.txt; then
+              exit 0
+            fi
+            if [ "${attempt}" -eq 3 ]; then
+              echo "::error::pip install failed after 3 attempts" >&2
+              exit 1
+            fi
+            echo "::warning::pip install failed (attempt ${attempt}/3); retrying in $((attempt * 5))s" >&2
+            sleep "$((attempt * 5))"
+          done
       - name: Compile sources
         run: python -m compileall bm scripts
-      - name: Run tests
-        # Live contract tests skip automatically without BROODMINDER_API_KEY,
-        # so CI validates collection + offline paths and stays green.
-        run: python -m pytest -q
+      - name: Run tests with coverage
+        # Live contract tests skip automatically without BROODMINDER_API_KEY.
+        # GH_TOKEN enables the live ruleset compliance check (issue #91).
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python -m pytest -q --cov=bm --cov=scripts --cov-report=xml --cov-report=term
+
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout (full history)
+        # Pin to SHA per Action Pinning Policy (ci-standards.md#action-pinning-policy).
+        # Look up current SHA: gh api repos/actions/checkout/git/refs/tags/v6.0.2 --jq '.object.sha'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: "8.30.1"
+          # Named GITLEAKS_CHECKSUM (not GITLEAKS_SHA256) — SonarCloud flags env var names
+          # matching *SHA256* containing hex strings as Security Hotspots (false positive).
+          GITLEAKS_CHECKSUM: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+        run: |
+          tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${tarball}"
+          # Retry with backoff so a transient GitHub-Releases/CDN failure doesn't fail CI.
+          for attempt in 1 2 3; do
+            if wget -q --tries=1 --timeout=30 --retry-connrefused "${url}" -O /tmp/gitleaks.tar.gz; then
+              break
+            fi
+            if [ "${attempt}" -eq 3 ]; then
+              echo "::error::gitleaks download failed after 3 attempts" >&2
+              exit 1
+            fi
+            echo "::warning::gitleaks download failed (attempt ${attempt}/3); retrying in $((attempt * 5))s" >&2
+            sleep "$((attempt * 5))"
+          done
+          echo "${GITLEAKS_CHECKSUM}  /tmp/gitleaks.tar.gz" | sha256sum -c
+          tar -xzf /tmp/gitleaks.tar.gz -C /usr/local/bin gitleaks
+
+      - name: Run gitleaks
+        run: gitleaks detect --source . --config .gitleaks.toml --redact --verbose --exit-code 1

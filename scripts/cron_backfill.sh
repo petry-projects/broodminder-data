@@ -21,9 +21,12 @@ PY="$DIR/.venv/bin/python"
 LOG="$DIR/data/cron_backfill.log"
 LOCKFILE="$DIR/data/.sync.lock"
 cd "$DIR" || exit 1
-[ -x "$PY" ] || PY="python3"   # fall back to system python if no venv
+[[ -x "$PY" ]] || PY="python3"   # fall back to system python if no venv
 
-ts() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+ts() {
+    date -u +%Y-%m-%dT%H:%M:%SZ
+    return
+}
 
 mkdir -p "$DIR/data"
 

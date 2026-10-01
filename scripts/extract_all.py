@@ -39,6 +39,29 @@ from bm.client import (  # noqa: E402
 )
 
 
+class UnsafePathError(ValueError):
+    pass
+
+
+def resolve_within(base: Path, *parts: str) -> Path:
+    """Join untrusted *parts onto base and prove the result stays inside base.
+
+    Both the ``--out`` directory (a CLI argument) and the hive id (external API
+    data) flow into the raw-write paths. A component containing ``..`` or an
+    absolute path would otherwise let a write escape the extract directory and
+    clobber arbitrary files (pythonsecurity:S8707). Resolve the candidate and
+    fail closed if it lands outside ``base`` — real ids and window filenames
+    never trip this, so behavior is unchanged for legitimate input.
+    """
+    base_resolved = base.resolve()
+    target = base_resolved.joinpath(*parts).resolve()
+    try:
+        target.relative_to(base_resolved)
+    except ValueError as exc:
+        raise UnsafePathError(f"path escapes {base_resolved}: {parts!r}") from exc
+    return target
+
+
 def write_gz(path: Path, obj) -> None:
     """Write a JSON object gzip-compressed (raw hive data is highly repetitive
     and the spike disk is small — gzip shrinks it ~19x)."""
@@ -105,6 +128,96 @@ def get_hive_resume_start(manifest: dict, hive_id: str | int, default_start: int
     return max(ends) if ends else default_start
 
 
+class _BudgetExhausted(Exception):
+    """Raised by process_hive when the call budget is reached; caught in main."""
+
+
+def select_apiaries(apiaries, filters: list) -> list:
+    """Filter apiaries by name (case-insensitive) or exact apiaryId. No filters
+    means keep them all. Normalizes both bare-list and wrapped-dict payloads."""
+    if isinstance(apiaries, dict):
+        apiaries = apiaries.get("apiaries", [])
+    if not filters:
+        return apiaries
+    wanted = {a.lower() for a in filters}
+    return [a for a in apiaries
+            if a.get("name", "").lower() in wanted or a.get("apiaryId") in filters]
+
+
+def fetch_window(bm, a: dict, h: dict, hid: str, s: int, e: int, hdir: Path, args) -> dict:
+    """Fetch + persist one (hive, window) and return its manifest record."""
+    hdir.mkdir(parents=True, exist_ok=True)
+    rec = {"apiaryId": a.get("apiaryId"), "apiaryName": a.get("name"),
+           "hiveName": h.get("name")}
+    readings = bm.hive_readings(hid, s, e)
+    write_gz(hdir / f"{s}-{e}.readings.json.gz", readings)
+    rec["reading_rows"] = count_reading_rows(readings)
+    if not args.no_notes:
+        notes = bm.hive_notes(hid, s, e)
+        write_gz(hdir / f"{s}-{e}.notes.json.gz", notes)
+        rec["notes"] = count_notes(notes)
+    return rec
+
+
+def _log_window(a: dict, h: dict, s: int, e: int, rec: dict) -> None:
+    if rec["reading_rows"] or rec.get("notes"):
+        ds = datetime.fromtimestamp(s, tz=timezone.utc)
+        de = datetime.fromtimestamp(e, tz=timezone.utc)
+        print(f"  {h['name']:>10} [{a['name'][:14]:<14}] "
+              f"{ds:%Y-%m-%d}..{de:%Y-%m-%d}  "
+              f"rows={rec['reading_rows']:<5} notes={rec.get('notes', '-')}")
+
+
+def _empty_run(count: int, reading_rows: int, limit: int) -> tuple[int, bool]:
+    """Track consecutive all-empty windows for --stop-after-empty backfill.
+
+    Returns (new_count, should_stop). With the feature off (limit 0) the count
+    is left untouched and it never stops.
+    """
+    if not limit:
+        return count, False
+    count = count + 1 if reading_rows == 0 else 0
+    return count, count >= limit
+
+
+def process_hive(bm, a: dict, h: dict, wins: list, args, raw: Path,
+                 completed: dict, save_manifest) -> None:
+    """Walk one hive's windows, fetching+recording the not-yet-completed ones.
+
+    Raises _BudgetExhausted when the call budget is reached (the caller stops
+    the whole run and exits resumably).
+    """
+    hid = h["hiveId"]
+    # hid comes from the API — treat as untrusted; confine to extract root (pythonsecurity:S8707).
+    hdir = resolve_within(raw, hid)
+    empties = 0
+    for s, e in wins:
+        key = f"{hid}|{s}|{e}"
+        if key in completed:
+            # Honor early-exit using cached row counts too, so a resumed
+            # backfill doesn't walk past the known data edge.
+            empties, stop = _empty_run(empties, completed[key].get("reading_rows", 0),
+                                       args.stop_after_empty)
+            if stop:
+                break
+            continue
+        if bm.call_count >= args.max_calls:
+            print(f"\n⏸  budget reached ({bm.call_count} calls). Resume later.")
+            raise _BudgetExhausted
+
+        rec = fetch_window(bm, a, h, hid, s, e, hdir, args)
+        completed[key] = rec
+        _log_window(a, h, s, e, rec)
+        if len(completed) % 25 == 0:
+            save_manifest()
+        # Early-exit bookkeeping for backfill: stop walking a hive backwards
+        # once we hit a run of empty windows (data is effectively contiguous;
+        # nothing older to find).
+        empties, stop = _empty_run(empties, rec["reading_rows"], args.stop_after_empty)
+        if stop:
+            break  # next hive
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--start", default="2021-01-01", help="history start (YYYY-MM-DD)")
@@ -125,7 +238,10 @@ def main() -> int:
                    help="resume forward from each hive's latest completed window in manifest.json")
     args = p.parse_args()
 
-    out = Path(args.out)
+    # Normalize the CLI-supplied output root once; every write below is proven
+    # (via resolve_within) to stay inside it, so a hostile --out or hive id
+    # can't traverse out of the extract tree (pythonsecurity:S8707).
+    out = Path(args.out).resolve()
     raw = out / "raw"
     out.mkdir(parents=True, exist_ok=True)
     manifest_path = out / "manifest.json"
@@ -164,15 +280,12 @@ def main() -> int:
         return 1
 
     stopped_early = False
+    wins = list(iter_windows(start, end, window))
     with bm_client as bm:
         try:
             # The very first call can itself be rate-limited; keep it inside the
             # handler so a 429 here exits cleanly (resumable) rather than crashing.
-            apiaries = bm.apiaries()
-            if args.apiary:
-                wanted = {a.lower() for a in args.apiary}
-                apiaries = [a for a in apiaries
-                            if a.get("name", "").lower() in wanted or a.get("apiaryId") in args.apiary]
+            apiaries = select_apiaries(bm.apiaries(), args.apiary)
             hives = [(a, h) for a in apiaries for h in a.get("hives", [])]
             if args.catchup:
                 all_caught_up = True
@@ -188,73 +301,26 @@ def main() -> int:
 
             print(f"scope: {len(apiaries)} apiaries, {len(hives)} hives")
             print(f"range: {args.start} .. {args.end or 'now'}  "
-                  f"({len(list(iter_windows(start, end, window)))} windows/hive)")
+                  f"({len(wins)} windows/hive)")
             print(f"budget: stop at {args.max_calls} calls (already used {bm.call_count})\n")
 
             for a, h in hives:
                 hid = h["hiveId"]
-                hdir = raw / hid
                 hive_start = get_hive_resume_start(manifest, hid, start) if args.catchup else start
                 if hive_start >= end:
                     continue
-                wins = list(iter_windows(hive_start, end, window))
-                if args.reverse:
-                    wins.reverse()
-                consecutive_empty = 0
-                for s, e in wins:
-                    key = f"{hid}|{s}|{e}"
-                    if key in completed:
-                        # Honor early-exit using cached row counts too, so a
-                        # resumed backfill doesn't walk past the known data edge.
-                        if args.stop_after_empty:
-                            if completed[key].get("reading_rows", 0) == 0:
-                                consecutive_empty += 1
-                                if consecutive_empty >= args.stop_after_empty:
-                                    break
-                            else:
-                                consecutive_empty = 0
-                        continue
-                    if bm.call_count >= args.max_calls:
-                        print(f"\n⏸  budget reached ({bm.call_count} calls). Resume later.")
-                        stopped_early = True
-                        raise StopIteration
-
-                    hdir.mkdir(parents=True, exist_ok=True)
-                    rec = {"apiaryId": a.get("apiaryId"), "apiaryName": a.get("name"),
-                           "hiveName": h.get("name")}
-                    readings = bm.hive_readings(hid, s, e)
-                    write_gz(hdir / f"{s}-{e}.readings.json.gz", readings)
-                    rec["reading_rows"] = count_reading_rows(readings)
-
-                    if not args.no_notes:
-                        notes = bm.hive_notes(hid, s, e)
-                        write_gz(hdir / f"{s}-{e}.notes.json.gz", notes)
-                        rec["notes"] = count_notes(notes)
-
-                    completed[key] = rec
-                    # Early-exit bookkeeping for backfill: stop walking a hive
-                    # backwards once we hit a run of empty windows (data is
-                    # effectively contiguous; nothing older to find).
-                    if args.stop_after_empty:
-                        if rec["reading_rows"] == 0:
-                            consecutive_empty += 1
-                        else:
-                            consecutive_empty = 0
-                    if rec["reading_rows"] or rec.get("notes"):
-                        ds = datetime.fromtimestamp(s, tz=timezone.utc)
-                        de = datetime.fromtimestamp(e, tz=timezone.utc)
-                        print(f"  {h['name']:>10} [{a['name'][:14]:<14}] "
-                              f"{ds:%Y-%m-%d}..{de:%Y-%m-%d}  "
-                              f"rows={rec['reading_rows']:<5} notes={rec.get('notes', '-')}")
-                    if len(completed) % 25 == 0:
-                        save_manifest()
-                    if args.stop_after_empty and consecutive_empty >= args.stop_after_empty:
-                        break  # next hive
-        except StopIteration:
-            pass
+                h_wins = list(iter_windows(hive_start, end, window))
+                hive_wins = list(reversed(h_wins)) if args.reverse else h_wins
+                process_hive(bm, a, h, hive_wins, args, raw, completed, save_manifest)
+        except _BudgetExhausted:
+            stopped_early = True
         except RateLimited as ex:
             print(f"\n⏸  rate limited by server ({ex.status}). Saving and exiting; resume later.")
             stopped_early = True
+        except UnsafePathError as ex:
+            save_manifest()
+            print(f"\n✗ unsafe path: {ex}", file=sys.stderr)
+            return 2
         except BroodMinderError as ex:
             save_manifest()
             print(f"\n✗ API error: {ex}", file=sys.stderr)

@@ -24,6 +24,19 @@ packages = ["bm"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v -ra"
+markers = [
+    "live: test hits the live BroodMinder API; skipped without BROODMINDER_API_KEY",
+    "compliance: repo-compliance checks; manage their own credentials (or skip) and run regardless of BROODMINDER_API_KEY",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["bm", "scripts"]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
 
 [build-system]
 requires = ["setuptools>=68"]

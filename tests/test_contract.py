@@ -18,6 +18,9 @@ import pytest
 
 from bm.client import BroodMinderClient, MAX_WINDOW_SECONDS
 
+# Every test in this module hits the live API and is skipped without a key.
+pytestmark = pytest.mark.live
+
 
 # --------------------------------------------------------------------------
 # /user/metadata/apiaries
@@ -29,7 +32,8 @@ def test_apiaries_is_list(apiaries):
 
 def test_apiary_schema(apiaries):
     for ap in apiaries:
-        assert isinstance(ap.get("apiaryId"), str) and ap["apiaryId"]
+        assert isinstance(ap.get("apiaryId"), str)
+        assert ap["apiaryId"]
         assert isinstance(ap.get("name"), str)
         assert isinstance(ap.get("hives"), list)
         loc = ap.get("location")
@@ -41,7 +45,8 @@ def test_apiary_schema(apiaries):
 def test_hive_schema(all_hives):
     assert all_hives, "expected hives across the account"
     for hv in all_hives:
-        assert isinstance(hv.get("hiveId"), str) and hv["hiveId"]
+        assert isinstance(hv.get("hiveId"), str)
+        assert hv["hiveId"]
         assert isinstance(hv.get("name"), str)
         # description/color are present but may be empty strings
         assert "description" in hv
@@ -75,11 +80,13 @@ def test_hive_reading_row_schema(client, sample_hive_id, recent_window):
         assert isinstance(r.get("deviceId"), str)
         assert isinstance(r.get("timestamp"), numbers.Integral)
         # battery/charge are each nullable; at least the keys exist
-        assert "batteryLevel" in r and "chargeRemaining" in r
+        assert "batteryLevel" in r
+        assert "chargeRemaining" in r
         for k in ("batteryLevel", "chargeRemaining"):
             assert r[k] is None or isinstance(r[k], numbers.Real)
         metrics = r.get("readings")
-        assert isinstance(metrics, dict) and metrics, "each row carries metric dict"
+        assert isinstance(metrics, dict), "each row carries metric dict"
+        assert metrics, "each row carries a non-empty metric dict"
         for v in metrics.values():
             assert v is None or isinstance(v, numbers.Real)
 

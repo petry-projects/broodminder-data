@@ -314,6 +314,12 @@ components:
         swarmState:
           type: [number, "null"]
           description: "x-question: meaning/enum UNDOCUMENTED (e.g. values 25, 27). Please publish a legend."
+        audio:
+          type: [number, "null"]
+          description: "x-observed: present on hives with acoustic monitoring hardware. Unit/scale unconfirmed."
+        radar:
+          type: [number, "null"]
+          description: "x-observed: present on hives with radar/movement sensors. Unit/scale unconfirmed."
 
     Note:
       type: object

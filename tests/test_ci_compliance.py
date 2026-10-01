@@ -214,7 +214,9 @@ def test_pr_auto_review_concurrency_group_matches_canonical():
         "!github.event.check_suite.pull_requests[1]",
         "github.event.workflow_run.pull_requests[0].number",
         "!github.event.workflow_run.pull_requests[1]",
-        "format('pr-auto-review-ready-check-pr-{0}'",
+        "format('pr-auto-review-ready-check-pr-{0}-{1}'",
+        "github.event.check_suite.head_sha",
+        "github.event.workflow_run.head_sha",
         "format('pr-auto-review-ready-check-unique-{0}', github.run_id)",
     ]
     for expr in required_expressions:

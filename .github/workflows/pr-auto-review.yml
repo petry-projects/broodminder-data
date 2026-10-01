@@ -48,8 +48,14 @@ permissions: {}
 # Free (20 concurrent jobs, org-wide) this stub fanned out per trigger. Its runs
 # split by context:
 #   • check_suite / workflow_run — head_branch=main, the check does NOT attach to
-#     the PR head, so superseding an in-flight run is SAFE. Both events collapse
-#     onto one group per PR (`…-pr-<number>`) with cancel-in-progress: true.
+#     the PR head. Both events collapse onto one group per PR (`…-pr-<number>`)
+#     with cancel-in-progress: true. Latest-wins cancellation prevents redundant
+#     readiness checks but can starve the dispatch: during a burst of check
+#     completions, runs are cancelled repeatedly before reaching dispatch. Only
+#     the last run in a quiet period guarantees dispatch; if that run fails or is
+#     cancelled, no re-evaluation occurs until the next event. pull_request-event
+#     runs (unique group, no cancel) are the fallback but only fire on PR state
+#     changes, not check completions.
 #   • pull_request / pull_request_review — run on the PR head; a cancelled run
 #     would leave a cancelled `pr-auto-review / check-and-dispatch` check on the
 #     head. They get a unique-per-run group and never cancel, so they behave

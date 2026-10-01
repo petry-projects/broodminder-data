@@ -56,12 +56,18 @@ permissions: {}
 #     exactly as before.
 # A default-branch trigger with no associated PR (fork / no PR) also falls back to
 # the unique-per-run group so unrelated PRs never collapse into one group.
+# A check_suite / workflow_run can be associated with MORE THAN ONE PR (shared
+# commit). Keying the group on pull_requests[0] alone would let a newer event for
+# the first PR cancel an in-flight run that is also evaluating a second PR, so that
+# second PR's readiness never gets re-checked. When a second PR is present we fall
+# back to the unique-per-run group so the run is never shared — and so never
+# cancelled — across PRs.
 concurrency:
   group: >-
     ${{
-    (github.event_name == 'check_suite' && github.event.check_suite.pull_requests[0].number)
+    (github.event_name == 'check_suite' && github.event.check_suite.pull_requests[0].number && !github.event.check_suite.pull_requests[1].number)
     && format('pr-auto-review-ready-check-pr-{0}', github.event.check_suite.pull_requests[0].number)
-    || (github.event_name == 'workflow_run' && github.event.workflow_run.pull_requests[0].number)
+    || (github.event_name == 'workflow_run' && github.event.workflow_run.pull_requests[0].number && !github.event.workflow_run.pull_requests[1].number)
     && format('pr-auto-review-ready-check-pr-{0}', github.event.workflow_run.pull_requests[0].number)
     || format('pr-auto-review-ready-check-unique-{0}', github.run_id)
     }}

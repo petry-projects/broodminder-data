@@ -207,7 +207,13 @@ def test_pr_auto_review_concurrency_group_matches_canonical():
 
     required_expressions = [
         "github.event.check_suite.pull_requests[0].number",
+        # Cardinality guard: collapse onto a per-PR group only when the event has
+        # exactly one associated PR; otherwise fall back to the unique-per-run
+        # group. Dropping this is the documented cross-PR cancellation failure
+        # (issue #1126) this drift check exists to catch.
+        "!github.event.check_suite.pull_requests[1]",
         "github.event.workflow_run.pull_requests[0].number",
+        "!github.event.workflow_run.pull_requests[1]",
         "format('pr-auto-review-ready-check-pr-{0}'",
         "format('pr-auto-review-ready-check-unique-{0}', github.run_id)",
     ]
@@ -217,8 +223,10 @@ def test_pr_auto_review_concurrency_group_matches_canonical():
             f"missing expression: {expr!r}"
         )
 
-    cancel_in_progress = concurrency.get("cancel-in-progress")
-    assert cancel_in_progress, "concurrency.cancel-in-progress must be defined"
+    assert "cancel-in-progress" in concurrency, (
+        "concurrency.cancel-in-progress must be defined"
+    )
+    cancel_in_progress = concurrency["cancel-in-progress"]
     cancel_str = str(cancel_in_progress)
     assert "github.event_name == 'check_suite'" in cancel_str, (
         "cancel-in-progress must check for check_suite event"

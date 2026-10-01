@@ -327,29 +327,68 @@ def test_flatten_atomic_interruption_preserves_existing_targets(tmp_path, monkey
     assert list(out_dir.glob("*.tmp*")) == []
 
 
-def test_extract_all_offline_catchup_check(tmp_path, monkeypatch, capsys):
+def test_extract_all_catchup_roster_check(tmp_path, monkeypatch, capsys):
     import scripts.extract_all as ex
 
     out_dir = tmp_path / "extract"
     out_dir.mkdir()
-    # Manifest with all hives caught up through timestamp 2000
+    end_ts = 1782864000  # 2026-07-01 00:00:00 UTC
     manifest = {
         "completed": {
-            "h1|1000|2000": {"reading_rows": 10},
-            "h2|1000|2000": {"reading_rows": 20},
+            f"h1|1000|{end_ts}": {"reading_rows": 10},
+            f"h2|1000|{end_ts}": {"reading_rows": 20},
         }
     }
     (out_dir / "manifest.json").write_text(json.dumps(manifest))
 
-    # Run extract_all with --catchup and --end corresponding to epoch 2000
-    # Provide no API key: it must exit 0 without attempting any client connection
-    monkeypatch.setenv("BROODMINDER_API_KEY", "")
-    monkeypatch.setattr("sys.argv", [
-        "extract_all.py", "--catchup", "--end", "1970-01-01", "--out", str(out_dir)
-    ])
-    assert ex.main() == 0
+    calls = {"readings": 0, "apiaries": 0}
 
+    class MockClient:
+        def __init__(self):
+            self.call_count = 0
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def apiaries(self):
+            calls["apiaries"] += 1
+            return [{"apiaryId": "a1", "name": "Apiary 1",
+                     "hives": [{"hiveId": "h1", "name": "H1"}, {"hiveId": "h2", "name": "H2"}]}]
+
+        def hive_readings(self, hid, s, e):
+            calls["readings"] += 1
+            return []
+
+        def hive_notes(self, hid, s, e):
+            return []
+
+    monkeypatch.setattr(ex, "BroodMinderClient", MockClient)
+    monkeypatch.setattr("sys.argv", [
+        "extract_all.py", "--catchup", "--end", "2026-07-01", "--out", str(out_dir)
+    ])
+
+    # Case 1: All discovered hives are caught up -> 1 discovery call, 0 extraction calls
+    assert ex.main() == 0
     captured = capsys.readouterr()
-    assert "already up to date" in captured.out
-    assert "0 API calls" in captured.out
+    assert "already up to date through 2026-07-01 across all 2 hives" in captured.out
+    assert calls["apiaries"] == 1
+    assert calls["readings"] == 0
+
+    # Case 2: New hive added to account -> not up to date, extracts the new hive
+    class MockClientWithNewHive(MockClient):
+        def apiaries(self):
+            calls["apiaries"] += 1
+            return [{"apiaryId": "a1", "name": "Apiary 1",
+                     "hives": [{"hiveId": "h1", "name": "H1"},
+                               {"hiveId": "h2", "name": "H2"},
+                               {"hiveId": "h3_new", "name": "H3"}]}]
+
+    monkeypatch.setattr(ex, "BroodMinderClient", MockClientWithNewHive)
+    assert ex.main() == 0
+    captured = capsys.readouterr()
+    assert "already up to date across all" not in captured.out
+    assert calls["readings"] > 0
 

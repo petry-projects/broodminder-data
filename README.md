@@ -141,7 +141,7 @@ BROODMINDER_BASE_URL=https://external-api.mybroodminder.com
 |---|---|---|
 | `--start YYYY-MM-DD` | `2021-01-01` | history start |
 | `--end YYYY-MM-DD` | today (UTC) | history end |
-| `--catchup` | off | resume forward from latest window in `manifest.json` |
+| `--catchup` | off | resume forward from each hive's latest completed window in `manifest.json` |
 | `--window-days N` | `180` | request window size (API caps at ~6 months) |
 | `--apiary NAME\|ID` | all | limit to one apiary (repeatable) |
 | `--max-calls N` | `900` | stop before this many API calls (daily-cap guard) |

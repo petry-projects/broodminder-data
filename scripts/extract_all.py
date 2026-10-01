@@ -122,7 +122,7 @@ def main() -> int:
                    help="with --reverse: stop a hive after N consecutive empty "
                         "windows (saves calls on hives with no old data; 0=off)")
     p.add_argument("--catchup", action="store_true",
-                   help="automatically resume forward from latest completed window in manifest.json")
+                   help="resume forward from each hive's latest completed window in manifest.json")
     args = p.parse_args()
 
     out = Path(args.out)
@@ -147,13 +147,6 @@ def main() -> int:
         end_dt = datetime.fromtimestamp(end, tz=timezone.utc)
         print(f"already up to date through {end_dt:%Y-%m-%d} (start={start} >= end={end}). Nothing to extract.")
         return 0
-
-    if args.catchup and not args.apiary and completed:
-        known_hives = {k.rsplit("|", 2)[0] for k in completed if len(k.rsplit("|", 2)) == 3}
-        if known_hives and all(get_hive_resume_start(manifest, hid, start) >= end for hid in known_hives):
-            end_dt = datetime.fromtimestamp(end, tz=timezone.utc)
-            print(f"already up to date through {end_dt:%Y-%m-%d} across all {len(known_hives)} hives (manifest check). 0 API calls.")
-            return 0
 
     window = args.window_days * 24 * 60 * 60
 

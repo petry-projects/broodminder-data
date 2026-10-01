@@ -33,11 +33,12 @@
 # canary that ENFORCES: the gate derives concurrency / cooldown / daily-budget /
 # consecutive-failure counters from this stub's own run history (no state
 # backend), reads every threshold from standards/agent-rate-limits.json, and
-# (concurrency group at lines 65–70 may cancel this run before the gate or
-# dispatch step completes). A `defer` decision simply skips the dispatch step
-# for a surviving run — it does not prevent cancellation (#443/#402).
-# If cancelled: job exits, dispatch never runs. If deferred: dispatch is skipped,
-# but the run completes normally. Never a job failure.
+# emits a decision. Note: the concurrency group at lines 67–74 operates
+# independently — `cancel-in-progress: true` may cancel this run before the gate
+# or dispatch step completes, regardless of the rate-limit decision. A `defer`
+# decision only skips the dispatch step for a surviving run; it does not prevent
+# workflow-level cancellation. If cancelled: job exits, dispatch never runs. If
+# deferred: dispatch is skipped, but the run completes normally. Never a job failure.
 #
 # To adopt:
 #   1. Copy this file verbatim to .github/workflows/initiative-driver.yml in your repo.

@@ -141,6 +141,11 @@ jobs:
             --tracking-repo "$ARL_TRACKING_REPO" \
             --tracking-issue "$ARL_TRACKING_ISSUE" || true
 
+      - name: Warn if gate produced no decision
+        if: steps.arl_gate.outputs.decision == '' || steps.arl_gate.outputs.decision == null
+        run: |
+          echo "::warning::Agent rate-limit gate produced no decision — gate may be down, dispatch proceeding ungated"
+
       - name: Dispatch central initiative-driver
         # Skipped (clean no-op) ONLY on an explicit `defer` — never a cancel, never
         # a job failure (#640, AC #1/#2). Fail-OPEN: an empty/missing decision (the

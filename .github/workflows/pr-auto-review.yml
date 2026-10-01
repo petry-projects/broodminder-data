@@ -50,6 +50,8 @@ permissions: {}
 #   • check_suite / workflow_run — head_branch=main, the check does NOT attach to
 #     the PR head, so superseding an in-flight run is SAFE. Both events collapse
 #     onto one group per PR (`…-pr-<number>`) with cancel-in-progress: true.
+#     When an event has exactly one associated PR, use its number; otherwise fall
+#     back to the unique-per-run group to avoid cross-PR cancellation.
 #   • pull_request / pull_request_review — run on the PR head; a cancelled run
 #     would leave a cancelled `pr-auto-review / check-and-dispatch` check on the
 #     head. They get a unique-per-run group and never cancel, so they behave
@@ -59,9 +61,13 @@ permissions: {}
 concurrency:
   group: >-
     ${{
-    (github.event_name == 'check_suite' && github.event.check_suite.pull_requests[0].number)
+    (github.event_name == 'check_suite'
+      && github.event.check_suite.pull_requests | length == 1
+      && github.event.check_suite.pull_requests[0].number)
     && format('pr-auto-review-ready-check-pr-{0}', github.event.check_suite.pull_requests[0].number)
-    || (github.event_name == 'workflow_run' && github.event.workflow_run.pull_requests[0].number)
+    || (github.event_name == 'workflow_run'
+      && github.event.workflow_run.pull_requests | length == 1
+      && github.event.workflow_run.pull_requests[0].number)
     && format('pr-auto-review-ready-check-pr-{0}', github.event.workflow_run.pull_requests[0].number)
     || format('pr-auto-review-ready-check-unique-{0}', github.run_id)
     }}

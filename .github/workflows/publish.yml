@@ -88,7 +88,14 @@ jobs:
             fi
             # Gate on the unit-tested helper (scripts.pypi_onboard.should_release_version),
             # feeding it the existing git tags, so the tested logic guards the real publish.
-            if [ "$(python -c 'import sys; from scripts.pypi_onboard import should_release_version; print("true" if should_release_version(sys.argv[1], sys.argv[2:]) else "false")' "${VERSION}" $(git tag))" != "true" ]; then
+            # Capture into a variable (not inline in the `if`) so a broken gate — import
+            # error, refactored module, unexpected stderr — aborts the step loudly instead
+            # of returning "" and silently taking the "tag already exists" branch.
+            if ! SHOULD_RELEASE=$(python -c 'import sys; from scripts.pypi_onboard import should_release_version; print("true" if should_release_version(sys.argv[1], sys.argv[2:]) else "false")' "${VERSION}" $(git tag)); then
+              echo "::error::Release gate (scripts.pypi_onboard.should_release_version) failed to run; aborting rather than skipping the release."
+              exit 1
+            fi
+            if [ "${SHOULD_RELEASE}" != "true" ]; then
               echo "Tag ${TAG} already exists. Version ${VERSION} is already published or tagged."
               echo "should_publish=false" >> "$GITHUB_OUTPUT"
               echo "create_release=false" >> "$GITHUB_OUTPUT"
@@ -220,7 +227,7 @@ jobs:
         run: |
           # Idempotent creation: if another serialized run already created the
           # release or tag, treat it as success instead of failing the merge.
-          if gh release view "${TAG}" >/dev/null 2>&1 || git rev-parse "${TAG}" >/dev/null 2>&1; then
+          if gh release view "${TAG}" >/dev/null 2>&1 || git rev-parse --verify "refs/tags/${TAG}" >/dev/null 2>&1; then
             echo "Release ${TAG} already exists; skipping creation."
           else
             echo "Creating GitHub Release ${TAG}..."

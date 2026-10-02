@@ -55,10 +55,20 @@ def _project_version_from_text(text: str) -> str:
     dependency table cannot be mistaken for the package version (which would make
     the release workflow publish under a bogus tag).
     """
-    section = re.search(r'^\[project\]\s*$(.*?)(?=^\[|\Z)', text, re.MULTILINE | re.DOTALL)
-    body = section.group(1) if section else ""
-    match = re.search(r'^\s*version\s*=\s*["\']([^"\']+)["\']', body, re.MULTILINE)
-    return match.group(1) if match else ""
+    # Scan line by line, tracking the current table header, instead of a
+    # single DOTALL regex: a table-scoped line scan has unambiguous operator
+    # precedence and no reluctant quantifier, so the intent stays explicit.
+    in_project = False
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if line.startswith("[") and line.endswith("]"):
+            in_project = line == "[project]"
+            continue
+        if in_project:
+            match = re.match(r'version\s*=\s*["\']([^"\']+)["\']', line)
+            if match:
+                return match.group(1)
+    return ""
 
 
 def get_package_version(pyproject_path: Path | None = None) -> str:

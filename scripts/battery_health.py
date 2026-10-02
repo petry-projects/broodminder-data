@@ -6,11 +6,11 @@ Both battery level <80% and stale reporting (>7 days without data)
 indicate that a sensor needs inspection or battery replacement.
 
 Usage:
-    python scripts/battery.py
-    python scripts/battery.py --all
-    python scripts/battery.py --threshold 75 --stale-days 5
-    python scripts/battery.py --apiary "Home" --format json
-    python scripts/battery.py --check
+    python scripts/battery_health.py
+    python scripts/battery_health.py --all
+    python scripts/battery_health.py --threshold 75 --stale-days 5
+    python scripts/battery_health.py --apiary "Home" --format json
+    python scripts/battery_health.py --check
 """
 from __future__ import annotations
 

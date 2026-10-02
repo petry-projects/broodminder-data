@@ -28,7 +28,7 @@ broodminder-data/
 │   ├── client.py             # Reusable BroodMinderClient (auth, retry, windowing)
 │   └── mcp_server.py         # FastMCP server for AI agents
 ├── scripts/
-│   ├── battery.py            # Battery health & offline sensor inspection CLI
+│   ├── battery_health.py     # Battery health & offline sensor inspection CLI
 │   ├── discover.py           # Account topology and schema inspection
 │   ├── extract_all.py        # Resumable, budget-aware bulk extraction
 │   ├── flatten.py            # Raw windows -> NDJSON/CSV/coverage transformation
@@ -59,6 +59,7 @@ broodminder-data/
 - Dev run (Discover): `.venv/bin/python scripts/discover.py`
 - Dev run (Extract): `.venv/bin/python scripts/extract_all.py --start 2025-01-01`
 - Dev run (Flatten): `.venv/bin/python scripts/flatten.py --merge`
+- Dev run (Battery): `.venv/bin/python scripts/battery_health.py`
 - Test: `.venv/bin/python -m pytest`
 - Lint: `.venv/bin/python -m compileall bm scripts tests`
 - Build Package: `.venv/bin/python -m build && .venv/bin/twine check dist/*`

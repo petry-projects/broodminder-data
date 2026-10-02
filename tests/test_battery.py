@@ -347,7 +347,7 @@ def test_format_csv_output():
 
 
 def test_find_default_data_file(tmp_path: Path):
-    from scripts.battery import find_default_data_file
+    from scripts.battery_health import find_default_data_file
 
     assert find_default_data_file(tmp_path) is None
 
@@ -362,9 +362,25 @@ def test_find_default_data_file(tmp_path: Path):
     assert found == data_file
 
 
+def test_find_default_data_file_fallbacks(tmp_path: Path):
+    from bm.battery import find_default_data_file
+
+    extract_dir = tmp_path / "data" / "extract"
+    extract_dir.mkdir(parents=True)
+
+    # Empty file should not match
+    csv_file = extract_dir / "readings.csv"
+    csv_file.write_text("")
+    assert find_default_data_file(tmp_path) is None
+
+    # Non-empty csv matches
+    csv_file.write_text("deviceId,batteryLevel\n1,85\n")
+    assert find_default_data_file(tmp_path) == csv_file
+
+
 def test_cli_battery_main(tmp_path: Path, capsys: pytest.CaptureFixture):
     import time
-    from scripts.battery import main
+    from scripts.battery_health import main
 
     now = int(time.time())
     data_file = tmp_path / "readings.ndjson"
@@ -402,4 +418,77 @@ def test_cli_battery_main(tmp_path: Path, capsys: pytest.CaptureFixture):
     # 5. Missing file error
     code = main(["--data", str(tmp_path / "nonexistent.json")])
     assert code == 2
+
+
+def test_evaluate_device_health_edge_cases():
+    import time
+    from bm.battery import evaluate_device_health, format_table
+
+    now = int(time.time())
+
+    # Empty device ID should be ignored
+    readings = [
+        {"deviceId": "", "batteryLevel": 90, "timestamp": now},
+        {"deviceId": "   ", "batteryLevel": 90, "timestamp": now},
+        # No battery telemetry reported, not stale
+        {"deviceId": "dev-nobatt", "batteryLevel": None, "timestamp": now},
+        # No battery telemetry reported, stale
+        {"deviceId": "dev-stale-nobatt", "batteryLevel": None, "timestamp": now - 10 * 86400},
+    ]
+
+    results = evaluate_device_health(readings, now_ts=now)
+    assert len(results) == 2
+
+    nobatt = next(d for d in results if d.device_id == "dev-nobatt")
+    assert nobatt.status == "UNKNOWN"
+    assert "No battery telemetry reported" in nobatt.reasons
+
+    stale_nobatt = next(d for d in results if d.device_id == "dev-stale-nobatt")
+    assert stale_nobatt.status == "STALE"
+
+    # All devices healthy message
+    all_healthy = [
+        {"deviceId": "dev-ok", "batteryLevel": 95, "timestamp": now},
+    ]
+    res_ok = evaluate_device_health(all_healthy, now_ts=now)
+    table_output = format_table(res_ok, show_all=False)
+    assert "All devices healthy" in table_output
+
+
+def test_scan_device_health_stream_and_file_edge_cases(tmp_path: Path):
+    import time
+    from bm.battery import scan_device_health_from_file, scan_device_health_from_stream
+
+    now = int(time.time())
+
+    # Invalid timestamp handling in stream
+    stream_records = [
+        {"deviceId": "dev-bad-ts", "timestamp": "invalid_ts", "batteryLevel": 70},
+    ]
+    res = scan_device_health_from_stream(stream_records, now_ts=now)
+    assert len(res) == 1
+    assert res[0].status == "LOW"
+
+    # Nonexistent file error
+    with pytest.raises(FileNotFoundError):
+        scan_device_health_from_file(tmp_path / "missing.ndjson")
+
+    # Malformed JSON in NDJSON file ignored
+    ndjson_file = tmp_path / "corrupt.ndjson"
+    ndjson_file.write_text("invalid json line\n" + json.dumps({"deviceId": "dev-valid", "batteryLevel": 90, "timestamp": now}) + "\n")
+    res = scan_device_health_from_file(ndjson_file, now_ts=now)
+    assert len(res) == 1
+    assert res[0].device_id == "dev-valid"
+
+
+def test_scripts_battery_health_execution(tmp_path: Path):
+    import subprocess
+    import sys
+
+    # Run scripts/battery_health.py with --help
+    script_path = Path(__file__).resolve().parent.parent / "scripts" / "battery_health.py"
+    res = subprocess.run([sys.executable, str(script_path), "--help"], capture_output=True, text=True)
+    assert res.returncode == 0
+    assert "Inspect BroodMinder sensor battery health" in res.stdout
+
 

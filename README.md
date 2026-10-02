@@ -214,7 +214,7 @@ Convert raw windows into clean, de-duplicated NDJSON and CSV:
 ### 5. Inspect Battery Health & Offline Sensors
 Identify sensors that have low batteries or stopped reporting:
 ```bash
-.venv/bin/python scripts/battery.py
+.venv/bin/python scripts/battery_health.py
 # or via entrypoint: broodminder-battery
 ```
 
@@ -230,23 +230,23 @@ In beehive deployments, two distinct conditions indicate battery replacement or 
 
 ```bash
 # Scan local dataset and show devices needing attention (<80% or >7d stale)
-.venv/bin/python scripts/battery.py
+.venv/bin/python scripts/battery_health.py
 
 # Show all devices including healthy ones
-.venv/bin/python scripts/battery.py --all
+.venv/bin/python scripts/battery_health.py --all
 
 # Custom warning thresholds
-.venv/bin/python scripts/battery.py --threshold 75 --stale-days 5
+.venv/bin/python scripts/battery_health.py --threshold 75 --stale-days 5
 
 # Filter by apiary
-.venv/bin/python scripts/battery.py --apiary "Home"
+.venv/bin/python scripts/battery_health.py --apiary "Home"
 
 # Export as JSON or CSV
-.venv/bin/python scripts/battery.py --format json
-.venv/bin/python scripts/battery.py --format csv
+.venv/bin/python scripts/battery_health.py --format json
+.venv/bin/python scripts/battery_health.py --format csv
 
 # Automation/Alerting mode (exits with code 1 if devices need attention)
-.venv/bin/python scripts/battery.py --check
+.venv/bin/python scripts/battery_health.py --check
 ```
 
 ---

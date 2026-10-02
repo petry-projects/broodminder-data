@@ -90,7 +90,7 @@ def test_gitleaks_config_present():
 def test_dev_lead_channel_regex_accepts_supported_forms(ref):
     assert DEV_LEAD_CHANNEL.match(ref), (
         f"'{ref}' must be accepted as a valid dev-lead channel; narrowing "
-        "DEV_LEAD_CHANNEL to drop a supported form reintroduces issue #67"
+        f"DEV_LEAD_CHANNEL to drop a supported form reintroduces issue #67"
     )
 
 
@@ -131,7 +131,7 @@ def test_dev_lead_stub_passes_valid_agent_ref():
     ref = m.group(1)
     assert DEV_LEAD_CHANNEL.match(ref), (
         f"agent_ref '{ref}' must be a valid dev-lead channel "
-        "(dev-lead/stable, dev-lead/next, dev-lead/ring<N>, or versioned dev-lead/v<N>-<channel>)"
+        f"(dev-lead/stable, dev-lead/next, dev-lead/ring<N>, or versioned dev-lead/v<N>-<channel>)"
     )
 
 
@@ -153,7 +153,7 @@ def test_dev_lead_uses_ref_matches_agent_ref():
     )
     assert uses.group(1) == agent.group(1), (
         f"uses ref '{uses.group(1)}' and agent_ref '{agent.group(1)}' must pin "
-        "the same channel"
+        f"the same channel"
     )
 
 
@@ -221,8 +221,7 @@ def test_pr_auto_review_concurrency_group_matches_canonical():
     ]
     for expr in required_expressions:
         assert expr in group_str, (
-            f"pr-auto-review.yml concurrency.group has drifted from canonical; "
-            f"missing expression: {expr!r}"
+            f"pr-auto-review.yml concurrency.group has drifted from canonical; missing expression: {expr!r}"
         )
 
     assert "cancel-in-progress" in concurrency, (

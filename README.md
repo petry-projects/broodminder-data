@@ -209,6 +209,44 @@ Convert raw windows into clean, de-duplicated NDJSON and CSV:
 .venv/bin/python scripts/flatten.py --merge
 ```
 
+### 5. Inspect Battery Health & Offline Sensors
+Identify sensors that have low batteries or stopped reporting:
+```bash
+.venv/bin/python scripts/battery.py
+# or via entrypoint: broodminder-battery
+```
+
+---
+
+## 🔋 Battery Health & Offline Sensor Monitoring
+
+Answers the critical question: **"What batteries are low and need to be changed?"**
+
+In beehive deployments, two distinct conditions indicate battery replacement or inspection:
+1. **Low Battery (<80%):** Cold cluster and winter ambient temperatures accelerate coin-cell and alkaline voltage dropoff. Sensors dipping below 80% should be checked or replaced before winter cluster closure.
+2. **"Not Reporting" (Silent Dropouts):** When a battery fully dies in the field, the sensor simply goes dark. Sensors that have not reported data within 7 days are flagged as stale.
+
+```bash
+# Scan local dataset and show devices needing attention (<80% or stale >7d)
+python scripts/battery.py
+
+# Show all devices including healthy ones
+python scripts/battery.py --all
+
+# Custom warning thresholds
+python scripts/battery.py --threshold 75 --stale-days 5
+
+# Filter by apiary
+python scripts/battery.py --apiary "Home"
+
+# Export as JSON or CSV
+python scripts/battery.py --format json
+python scripts/battery.py --format csv
+
+# Automation/Alerting mode (exits with code 1 if devices need attention)
+python scripts/battery.py --check
+```
+
 ---
 
 ## OpenAPI 3.1 Specification & Interactive Docs

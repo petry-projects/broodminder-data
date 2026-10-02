@@ -24,9 +24,11 @@ It follows the [AGENTS.md convention](https://agents.md/) and extends the organi
 broodminder-data/
 ├── bm/
 │   ├── __init__.py           # Public exports
+│   ├── battery.py            # Battery health & offline sensor evaluation engine
 │   ├── client.py             # Reusable BroodMinderClient (auth, retry, windowing)
 │   └── mcp_server.py         # FastMCP server for AI agents
 ├── scripts/
+│   ├── battery.py            # Battery health & offline sensor inspection CLI
 │   ├── discover.py           # Account topology and schema inspection
 │   ├── extract_all.py        # Resumable, budget-aware bulk extraction
 │   ├── flatten.py            # Raw windows -> NDJSON/CSV/coverage transformation
@@ -35,6 +37,7 @@ broodminder-data/
 │   └── cron_backfill.sh      # Unattended multi-day historical backfill
 ├── tests/
 │   ├── conftest.py           # Shared fixtures & skip markers
+│   ├── test_battery.py       # Fast, deterministic battery health unit tests
 │   ├── test_offline.py       # Fast, deterministic unit tests
 │   ├── test_packaging.py     # Package metadata, PyPI probe, and publish CI tests
 │   ├── test_scripts_refactor.py # Script logic and data formatting tests

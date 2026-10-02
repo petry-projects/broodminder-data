@@ -39,6 +39,9 @@ dev = [
     "twine>=5.0",
 ]
 
+[project.scripts]
+broodminder-battery = "bm.battery:main"
+
 [project.urls]
 Homepage = "https://github.com/petry-projects/broodminder-data"
 Documentation = "https://github.com/petry-projects/broodminder-data#readme"

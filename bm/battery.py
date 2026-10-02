@@ -199,6 +199,7 @@ def scan_device_health_from_stream(
 ) -> list[DeviceHealth]:
     """Scan a stream of readings, keep the latest reading per device, and evaluate health."""
     latest_by_device: dict[str, dict[str, Any]] = {}
+    latest_ts_by_device: dict[str, int] = {}
 
     for r in records:
         dev_id = r.get("deviceId")
@@ -210,9 +211,9 @@ def scan_device_health_from_stream(
         except (ValueError, TypeError):
             ts = 0
 
-        existing = latest_by_device.get(dev_id)
-        if existing is None or ts >= int(existing.get("timestamp") or 0):
+        if dev_id not in latest_by_device or ts >= latest_ts_by_device[dev_id]:
             latest_by_device[dev_id] = r
+            latest_ts_by_device[dev_id] = ts
 
     return evaluate_device_health(
         latest_by_device.values(),

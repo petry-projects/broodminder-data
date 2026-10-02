@@ -208,6 +208,20 @@ def test_scan_device_health_from_stream_selects_latest_timestamp():
     assert results[0].needs_attention
 
 
+def test_scan_device_health_from_stream_tolerates_malformed_first_timestamp():
+    # A malformed timestamp stored first must not abort the scan when the next
+    # reading for that device is compared against it (regression for PR #160).
+    now_ts = 1700000000
+    stream = [
+        {"deviceId": "dev-x", "timestamp": "not-a-number", "batteryLevel": 99},
+        {"deviceId": "dev-x", "timestamp": 3000, "batteryLevel": 60},
+    ]
+    results = scan_device_health_from_stream(stream, now_ts=now_ts, threshold=80)
+    assert len(results) == 1
+    assert results[0].last_seen_epoch == 3000
+    assert results[0].battery_percent == 60
+
+
 # --- 4. scan_device_health_from_file tests -----------------------------------
 
 

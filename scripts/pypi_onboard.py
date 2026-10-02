@@ -47,6 +47,20 @@ PENDING_PUBLISHER_HINT = (
 )
 
 
+def _project_version_from_text(text: str) -> str:
+    """Regex fallback for reading ``[project].version`` without a TOML parser.
+
+    Used only when ``tomllib`` is unavailable (Python < 3.11). The search is
+    scoped to the ``[project]`` table so a ``version`` key in a ``[tool.*]`` or
+    dependency table cannot be mistaken for the package version (which would make
+    the release workflow publish under a bogus tag).
+    """
+    section = re.search(r'^\[project\]\s*$(.*?)(?=^\[|\Z)', text, re.MULTILINE | re.DOTALL)
+    body = section.group(1) if section else ""
+    match = re.search(r'^\s*version\s*=\s*["\']([^"\']+)["\']', body, re.MULTILINE)
+    return match.group(1) if match else ""
+
+
 def get_package_version(pyproject_path: Path | None = None) -> str:
     """Read the package version string from pyproject.toml."""
     path = pyproject_path or Path(__file__).resolve().parent.parent / "pyproject.toml"
@@ -57,8 +71,7 @@ def get_package_version(pyproject_path: Path | None = None) -> str:
         data = tomllib.loads(text)
         return str(data.get("project", {}).get("version", ""))
     except ImportError:
-        match = re.search(r'^\s*version\s*=\s*["\']([^"\']+)["\']', text, re.MULTILINE)
-        return match.group(1) if match else ""
+        return _project_version_from_text(text)
 
 
 def should_release_version(version: str, existing_tags: list[str]) -> bool:

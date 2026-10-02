@@ -1,7 +1,7 @@
 # 🐝 broodminder-data
 
 [![CI](https://github.com/petry-projects/broodminder-data/actions/workflows/ci.yml/badge.svg)](https://github.com/petry-projects/broodminder-data/actions/workflows/ci.yml)
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=petry-projects_broodminder-export2&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=petry-projects_broodminder-export2)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=petry-projects_broodminder-data&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=petry-projects_broodminder-data)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![PyPI version](https://img.shields.io/pypi/v/broodminder-data.svg)](https://pypi.org/project/broodminder-data/)
@@ -10,7 +10,7 @@
 
 **Make [BroodMinder](https://broodminder.com) beehive data easily accessible across diverse consumption use cases — bulk export, periodic delta sync, OpenAPI 3.1, and AI agents via MCP.**
 
-`broodminder-data` (formerly `broodminder-export`) provides a unified developer platform for BroodMinder beehive sensor telemetry (internal/ambient temperature, relative humidity, scale weight, swarm indicators, acoustics, radar, and inspection notes). Similar to [`empower-personal-dashboard`](https://github.com/petry-projects/empower-personal-dashboard), this project provides a **published OpenAPI 3.1 specification**, a **Python CLI and client SDK**, and a **Model Context Protocol (MCP) server** for AI agents.
+`broodminder-data` provides a unified developer platform for BroodMinder beehive sensor telemetry (internal/ambient temperature, relative humidity, scale weight, swarm indicators, acoustics, radar, and inspection notes). This project provides a **published OpenAPI 3.1 specification**, a **Python CLI and client SDK**, and a **Model Context Protocol (MCP) server** for AI agents.
 
 > [!IMPORTANT]
 > **Unofficial.** Not affiliated with or endorsed by BroodMinder. It uses the

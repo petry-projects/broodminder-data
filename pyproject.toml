@@ -1,6 +1,6 @@
 [project]
 name = "broodminder-data"
-version = "0.1.0"
+version = "0.1.1"
 description = "Unified Python client, CLI, bulk export, periodic delta sync, OpenAPI 3.1 spec, and MCP server for BroodMinder beehive data."
 readme = "README.md"
 license = "MIT"

@@ -27,7 +27,7 @@ def test_pyproject_toml_structure():
 
     project = data.get("project", {})
     assert project.get("name") == "broodminder-data"
-    assert project.get("version") == "0.1.0"
+    assert project.get("version") == "0.1.1"
     assert project.get("license") == "MIT"
     assert "broodminder" in project.get("keywords", [])
     assert "mcp" in project.get("keywords", [])

@@ -5,8 +5,8 @@
 `broodminder-data` makes BroodMinder beehive sensor telemetry easily accessible
 across a variety of consumption use cases including bulk export, periodic delta
 sync, published OpenAPI 3.1 specifications, and AI agents via Model Context
-Protocol (MCP). Similar to `empower-personal-dashboard`, it provides a published
-OpenAPI 3.1 spec, a Python CLI library/SDK, and an MCP server.
+Protocol (MCP). It provides a published OpenAPI 3.1 spec, a Python CLI library/SDK,
+and an MCP server.
 
 ## Tech Stack
 

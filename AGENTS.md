@@ -1,6 +1,6 @@
 # AGENTS.md — Agent Guidelines & Project Standards
 
-This file defines project-specific development standards for **broodminder-data** (formerly `broodminder-export`).
+This file defines project-specific development standards for **broodminder-data**.
 It follows the [AGENTS.md convention](https://agents.md/) and extends the organization-wide engineering standards.
 
 > **Organization standards:** This repository inherits shared development and security standards from

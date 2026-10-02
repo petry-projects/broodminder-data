@@ -129,7 +129,8 @@ def test_evaluate_device_health_stale_not_reporting():
     d = results[0]
     assert d.status == "STALE"
     assert d.needs_attention
-    assert d.days_offline is not None and d.days_offline >= 8.0
+    assert d.days_offline is not None
+    assert d.days_offline >= 8.0
     assert any("not reporting" in r.lower() or "stale" in r.lower() for r in d.reasons)
 
 

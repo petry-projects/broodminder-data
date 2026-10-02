@@ -61,6 +61,90 @@ def extract_battery(reading: dict[str, Any]) -> int | None:
         return None
 
 
+def _matches_apiary(reading: dict[str, Any], apiary_filter: str | None) -> bool:
+    """Return True when the reading belongs to the requested apiary (or no filter set)."""
+    if not apiary_filter:
+        return True
+    ap_name = reading.get("apiaryName")
+    ap_id = reading.get("apiaryId")
+    matches_name = ap_name and apiary_filter in ap_name.lower()
+    matches_id = ap_id and apiary_filter == str(ap_id).lower()
+    return bool(matches_name or matches_id)
+
+
+def _parse_last_epoch(reading: dict[str, Any]) -> int | None:
+    """Parse the reading's timestamp into an integer epoch, or None if absent/invalid."""
+    ts = reading.get("timestamp")
+    return int(ts) if ts is not None and str(ts).isdigit() else None
+
+
+def _classify_battery(
+    battery: int | None, is_stale: bool, threshold: int, critical: int
+) -> tuple[str, list[str], bool]:
+    """Derive (status, battery-related reasons, battery-needs-attention) for a reading."""
+    if battery is None:
+        if is_stale:
+            return "STALE", [], False
+        return "UNKNOWN", ["No battery telemetry reported"], False
+
+    if battery < critical:
+        return "CRITICAL", [f"Critical battery {battery}% (<{critical}% critical threshold)"], True
+    if battery < threshold:
+        return "LOW", [f"Low battery {battery}% (<{threshold}% warning threshold)"], True
+    if is_stale:
+        return "STALE", [], False
+    return "OK", [], False
+
+
+def _evaluate_reading(
+    reading: dict[str, Any],
+    ref_ts: int,
+    threshold: int,
+    critical: int,
+    stale_days: int,
+) -> DeviceHealth | None:
+    """Evaluate a single reading into a DeviceHealth, or None if it has no device id."""
+    dev_id = str(reading.get("deviceId") or "").strip()
+    if not dev_id:
+        return None
+
+    battery = extract_battery(reading)
+    last_epoch = _parse_last_epoch(reading)
+
+    dt = reading.get("datetime")
+    if not dt and last_epoch is not None:
+        dt = datetime.fromtimestamp(last_epoch, tz=timezone.utc).isoformat()
+
+    days_offline = None
+    if last_epoch is not None:
+        days_offline = round(max(0, ref_ts - last_epoch) / 86400.0, 1)
+
+    is_stale = days_offline is not None and days_offline >= stale_days
+    reasons: list[str] = []
+    if is_stale:
+        reasons.append(f"Not reporting ({days_offline:.1f} days offline > {stale_days}d threshold)")
+
+    status, battery_reasons, battery_attention = _classify_battery(
+        battery, is_stale, threshold, critical
+    )
+    reasons.extend(battery_reasons)
+
+    return DeviceHealth(
+        device_id=dev_id,
+        hive_id=reading.get("hiveId"),
+        hive_name=reading.get("hiveName"),
+        apiary_id=reading.get("apiaryId"),
+        apiary_name=reading.get("apiaryName"),
+        battery_percent=battery,
+        last_seen_epoch=last_epoch,
+        last_seen_datetime=dt,
+        days_offline=days_offline,
+        status=status,
+        needs_attention=is_stale or battery_attention,
+        reasons=reasons,
+    )
+
+
 def evaluate_device_health(
     readings: Iterable[dict[str, Any]],
     now_ts: int | None = None,
@@ -83,88 +167,15 @@ def evaluate_device_health(
         List of DeviceHealth objects sorted with devices needing attention first.
     """
     ref_ts = now_ts if now_ts is not None else int(time.time())
-    stale_seconds = stale_days * 86400
-
     apiary_filter = apiary.strip().lower() if apiary else None
+
     devices: list[DeviceHealth] = []
-
     for r in readings:
-        dev_id = str(r.get("deviceId") or "").strip()
-        if not dev_id:
+        if not _matches_apiary(r, apiary_filter):
             continue
-
-        ap_name = r.get("apiaryName")
-        ap_id = r.get("apiaryId")
-        if apiary_filter:
-            matches_name = ap_name and apiary_filter in ap_name.lower()
-            matches_id = ap_id and apiary_filter == str(ap_id).lower()
-            if not (matches_name or matches_id):
-                continue
-
-        battery = extract_battery(r)
-        ts = r.get("timestamp")
-        last_epoch = int(ts) if ts is not None and str(ts).isdigit() else None
-
-        dt = r.get("datetime")
-        if not dt and last_epoch is not None:
-            dt = datetime.fromtimestamp(last_epoch, tz=timezone.utc).isoformat()
-
-        days_offline = None
-        if last_epoch is not None:
-            seconds_offline = max(0, ref_ts - last_epoch)
-            days_offline = round(seconds_offline / 86400.0, 1)
-
-        reasons: list[str] = []
-        needs_attention = False
-        status = "OK"
-
-        # Check stale reporting
-        is_stale = False
-        if days_offline is not None and days_offline >= stale_days:
-            is_stale = True
-            needs_attention = True
-            reasons.append(f"Not reporting ({days_offline:.1f} days offline > {stale_days}d threshold)")
-
-        # Check battery level
-        if battery is not None:
-            if battery < critical:
-                status = "CRITICAL"
-                needs_attention = True
-                reasons.append(f"Critical battery {battery}% (<{critical}% critical threshold)")
-            elif battery < threshold:
-                status = "LOW"
-                needs_attention = True
-                reasons.append(f"Low battery {battery}% (<{threshold}% warning threshold)")
-            elif is_stale:
-                status = "STALE"
-            else:
-                status = "OK"
-        else:
-            if is_stale:
-                status = "STALE"
-            else:
-                status = "UNKNOWN"
-                reasons.append("No battery telemetry reported")
-
-        if is_stale and status not in ("CRITICAL", "LOW"):
-            status = "STALE"
-
-        devices.append(
-            DeviceHealth(
-                device_id=dev_id,
-                hive_id=r.get("hiveId"),
-                hive_name=r.get("hiveName"),
-                apiary_id=ap_id,
-                apiary_name=ap_name,
-                battery_percent=battery,
-                last_seen_epoch=last_epoch,
-                last_seen_datetime=dt,
-                days_offline=days_offline,
-                status=status,
-                needs_attention=needs_attention,
-                reasons=reasons,
-            )
-        )
+        health = _evaluate_reading(r, ref_ts, threshold, critical, stale_days)
+        if health is not None:
+            devices.append(health)
 
     # Sort: needs_attention first, then lowest battery, then longest offline
     devices.sort(
@@ -213,6 +224,18 @@ def scan_device_health_from_stream(
     )
 
 
+def _iter_ndjson(fh: Iterable[str]) -> Iterable[dict[str, Any]]:
+    """Yield parsed objects from NDJSON / JSON-lines text, skipping blank/invalid lines."""
+    for line in fh:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            yield json.loads(line)
+        except json.JSONDecodeError:
+            continue
+
+
 def scan_device_health_from_file(
     file_path: Path | str,
     now_ts: int | None = None,
@@ -226,47 +249,32 @@ def scan_device_health_from_file(
     if not path.exists():
         raise FileNotFoundError(f"File not found: {path}")
 
-    # Check file format
     name = path.name.lower()
-    is_gz = name.endswith(".gz")
+    opener = gzip.open if name.endswith(".gz") else open
     is_csv = ".csv" in name
 
-    def _open():
-        if is_gz:
-            return gzip.open(path, "rt", encoding="utf-8")
-        return open(path, "r", encoding="utf-8")
+    with opener(path, "rt", encoding="utf-8") as fh:
+        records = csv.DictReader(fh) if is_csv else _iter_ndjson(fh)
+        # The stream is consumed eagerly here, before the file handle closes.
+        return scan_device_health_from_stream(
+            records,
+            now_ts=now_ts,
+            threshold=threshold,
+            critical=critical,
+            stale_days=stale_days,
+            apiary=apiary,
+        )
 
-    with _open() as fh:
-        if is_csv:
-            reader = csv.DictReader(fh)
-            records = (row for row in reader)
-            return scan_device_health_from_stream(
-                records,
-                now_ts=now_ts,
-                threshold=threshold,
-                critical=critical,
-                stale_days=stale_days,
-                apiary=apiary,
-            )
-        else:
-            # Assume NDJSON / JSON lines
-            def _iter_ndjson():
-                for line in fh:
-                    line = line.strip()
-                    if line:
-                        try:
-                            yield json.loads(line)
-                        except json.JSONDecodeError:
-                            continue
 
-            return scan_device_health_from_stream(
-                _iter_ndjson(),
-                now_ts=now_ts,
-                threshold=threshold,
-                critical=critical,
-                stale_days=stale_days,
-                apiary=apiary,
-            )
+def _health_row(d: DeviceHealth) -> list[str]:
+    """Build a single formatted table row for a device."""
+    batt_str = f"{d.battery_percent}%" if d.battery_percent is not None else "N/A"
+    offline_str = f"{d.days_offline:.1f}d" if d.days_offline is not None else "-"
+    apiary_str = (d.apiary_name or "-")[:16]
+    hive_str = (d.hive_name or "-")[:12]
+    dev_str = d.device_id[:14] + "..." if len(d.device_id) > 17 else d.device_id
+    reasons_str = "; ".join(d.reasons) if d.reasons else "Normal"
+    return [d.status, batt_str, offline_str, apiary_str, hive_str, dev_str, reasons_str]
 
 
 def format_table(devices: list[DeviceHealth], show_all: bool = False) -> str:
@@ -277,19 +285,9 @@ def format_table(devices: list[DeviceHealth], show_all: bool = False) -> str:
         return "All devices healthy (no batteries < threshold and no stale reporting)."
 
     headers = ["Status", "Battery", "Days Offline", "Apiary", "Hive", "Device ID", "Diagnosis"]
-    rows = []
+    rows = [_health_row(d) for d in items]
 
-    for d in items:
-        batt_str = f"{d.battery_percent}%" if d.battery_percent is not None else "N/A"
-        offline_str = f"{d.days_offline:.1f}d" if d.days_offline is not None else "-"
-        apiary_str = (d.apiary_name or "-")[:16]
-        hive_str = (d.hive_name or "-")[:12]
-        dev_str = d.device_id[:14] + "..." if len(d.device_id) > 17 else d.device_id
-        reasons_str = "; ".join(d.reasons) if d.reasons else "Normal"
-
-        rows.append([d.status, batt_str, offline_str, apiary_str, hive_str, dev_str, reasons_str])
-
-    # Compute column widths
+    # Compute column widths from headers and every row cell.
     col_widths = [len(h) for h in headers]
     for row in rows:
         for i, val in enumerate(row):
@@ -300,8 +298,7 @@ def format_table(devices: list[DeviceHealth], show_all: bool = False) -> str:
 
     sep = "-+-".join("-" * w for w in col_widths)
     output = [_line(headers), sep]
-    for row in rows:
-        output.append(_line(row))
+    output.extend(_line(row) for row in rows)
 
     return "\n".join(output)
 

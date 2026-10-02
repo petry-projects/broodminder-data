@@ -79,6 +79,37 @@ def test_check_build_tools():
     assert isinstance(missing, list)
 
 
+def test_get_package_version(tmp_path: Path):
+    from scripts.pypi_onboard import get_package_version
+
+    # Current repo version
+    assert get_package_version() == "0.1.2"
+
+    # Custom pyproject
+    custom_toml = tmp_path / "pyproject.toml"
+    custom_toml.write_text('[project]\nname = "test"\nversion = "1.2.3"\n')
+    assert get_package_version(custom_toml) == "1.2.3"
+
+
+def test_should_release_version():
+    from scripts.pypi_onboard import should_release_version
+
+    existing = ["v0.1.0", "v0.1.1", "v0.1.2"]
+    assert should_release_version("0.1.2", existing) is False
+    assert should_release_version("0.1.3", existing) is True
+    assert should_release_version("", existing) is False
+    assert should_release_version("0.1.0", ["0.1.0"]) is False
+
+
+def test_pypi_onboard_version_cli(capsys: pytest.CaptureFixture):
+    from scripts.pypi_onboard import main
+
+    code = main(["--version"])
+    assert code == 0
+    captured = capsys.readouterr()
+    assert captured.out.strip() == "0.1.2"
+
+
 def test_pending_publisher_hint_content():
     assert PACKAGE_NAME in PENDING_PUBLISHER_HINT
     assert "petry-projects" in PENDING_PUBLISHER_HINT
@@ -94,10 +125,13 @@ def test_publish_workflow_structure():
     assert "release:" in text
     assert "workflow_dispatch:" in text
     assert "dry_run:" in text
+    assert "push:" in text
+    assert "branches: [main]" in text
 
     # Permissions
     assert "id-token: write" in text
     assert "contents: read" in text
+    assert "contents: write" in text
 
     # Environment
     assert "environment:" in text
@@ -112,3 +146,4 @@ def test_publish_workflow_structure():
             assert len(parts) == 2, f"Action reference must be pinned with @: {line}"
             ref_part = parts[1].split()[0]
             assert len(ref_part) == 40, f"Action must be pinned to 40-character SHA: {line}"
+

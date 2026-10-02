@@ -317,8 +317,9 @@ python scripts/pypi_onboard.py
 
 ### 4. Automated Publishing Workflow
 
-- **Automatic:** Creating a GitHub Release automatically builds and publishes packages to PyPI via `.github/workflows/publish.yml`.
-- **Manual Trigger (with Dry Run):** You can also run the workflow manually via `workflow_dispatch` with `dry_run: true` (default) to test artifact generation without releasing.
+- **Automated on Merge to `main`:** When a PR bumping the package `version` in `pyproject.toml` is merged to `main`, `.github/workflows/publish.yml` detects that git tag `v<version>` does not exist yet, builds and verifies the distribution packages with `twine check --strict`, publishes to PyPI tokenlessly via Trusted Publishing OIDC, and automatically creates the git tag and GitHub Release with generated release notes.
+- **GitHub Release Trigger:** Publishing a release manually or via the GitHub UI also triggers `.github/workflows/publish.yml`.
+- **Manual Trigger (with Dry Run):** You can run the workflow manually via `workflow_dispatch` with `dry_run: true` (default) to test artifact generation without releasing.
 
 ---
 

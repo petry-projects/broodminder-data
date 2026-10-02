@@ -89,8 +89,6 @@ broodminder-data/
 
 ## 6. PyPI Trusted Publishing & Release Standards
 
-Modeled after `don-petry/brand-ops`:
-
 - **Tokenless OIDC Publishing:** Packaging and releases publish via PyPI Trusted Publishing (`id-token: write`). Never store long-lived `PYPI_TOKEN` secrets in repository settings.
 - **Pending Publisher Registration:** Before the initial release, a pending publisher must be configured at `https://pypi.org/manage/account/publishing/` for PyPI project `broodminder-data`, owner `petry-projects`, repo `broodminder-data`, workflow `publish.yml`, environment `pypi`.
 - **Dry-Run Safety:** Manual release dispatches via `.github/workflows/publish.yml` default to `dry_run: true` so packages can be built, inspected, and validated with `twine check` before releasing.

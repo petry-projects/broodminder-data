@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Onboard, package, and verify broodminder-data for PyPI publishing.
 
-Modeled directly on the PyPI publishing and name-claiming architecture from
-`don-petry/brand-ops` (scripts/packages.py):
+PyPI publishing and distribution verification:
 
 1. Probes the PyPI registry API to determine package name availability.
 2. Validates package metadata and builds PEP 517 sdist (.tar.gz) and wheel (.whl).

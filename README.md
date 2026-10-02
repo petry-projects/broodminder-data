@@ -286,7 +286,7 @@ print(f"Fetched {len(readings)} readings")
 
 ## PyPI Packaging & Automated Publishing
 
-`broodminder-data` adopts the automated, tokenless **PyPI Trusted Publishing (OIDC)** approach pioneered in [`don-petry/brand-ops`](https://github.com/don-petry/brand-ops).
+`broodminder-data` uses automated, tokenless **PyPI Trusted Publishing (OIDC)**.
 
 ### 1. Tokenless Trusted Publishing Architecture
 

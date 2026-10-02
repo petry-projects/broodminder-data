@@ -30,11 +30,13 @@ broodminder-data/
 │   ├── discover.py           # Account topology and schema inspection
 │   ├── extract_all.py        # Resumable, budget-aware bulk extraction
 │   ├── flatten.py            # Raw windows -> NDJSON/CSV/coverage transformation
+│   ├── pypi_onboard.py       # PyPI availability probe, build, and verification
 │   ├── cron_sync.sh          # Periodic forward catch-up sync
 │   └── cron_backfill.sh      # Unattended multi-day historical backfill
 ├── tests/
 │   ├── conftest.py           # Shared fixtures & skip markers
 │   ├── test_offline.py       # Fast, deterministic unit tests
+│   ├── test_packaging.py     # Package metadata, PyPI probe, and publish CI tests
 │   ├── test_scripts_refactor.py # Script logic and data formatting tests
 │   └── test_contract.py      # Live contract tests against BroodMinder API
 ├── openapi/
@@ -56,6 +58,8 @@ broodminder-data/
 - Dev run (Flatten): `.venv/bin/python scripts/flatten.py --merge`
 - Test: `.venv/bin/python -m pytest`
 - Lint: `.venv/bin/python -m compileall bm scripts tests`
+- Build Package: `.venv/bin/python -m build && .venv/bin/twine check dist/*`
+- PyPI Onboard / Probe: `.venv/bin/python scripts/pypi_onboard.py`
 - OpenAPI Lint: `npx @redocly/cli lint openapi.yaml`
 - OpenAPI Preview: `npx @redocly/cli preview-docs openapi.yaml`
 
@@ -80,3 +84,13 @@ broodminder-data/
 - **TDD is Mandatory:** Write unit tests before implementing new client features, CLI commands, or MCP tools.
 - **Fast & Deterministic Unit Tests:** Offline tests (`test_offline.py`, `test_scripts_refactor.py`) must run without network dependencies and finish in seconds.
 - **Live Contract Tests:** `test_contract.py` pins live API contracts and auto-skips when `BROODMINDER_API_KEY` is not present, keeping CI runs green on PRs from contributors.
+
+---
+
+## 6. PyPI Trusted Publishing & Release Standards
+
+Modeled after `don-petry/brand-ops`:
+
+- **Tokenless OIDC Publishing:** Packaging and releases publish via PyPI Trusted Publishing (`id-token: write`). Never store long-lived `PYPI_TOKEN` secrets in repository settings.
+- **Pending Publisher Registration:** Before the initial release, a pending publisher must be configured at `https://pypi.org/manage/account/publishing/` for PyPI project `broodminder-data`, owner `petry-projects`, repo `broodminder-data`, workflow `publish.yml`, environment `pypi`.
+- **Dry-Run Safety:** Manual release dispatches via `.github/workflows/publish.yml` default to `dry_run: true` so packages can be built, inspected, and validated with `twine check` before releasing.

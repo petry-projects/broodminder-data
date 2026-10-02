@@ -49,9 +49,14 @@ permissions: {}
 # split by context:
 #   • check_suite / workflow_run — head_branch=main, the check does NOT attach to
 #     the PR head, so superseding an in-flight run is SAFE. Both events collapse
-#     onto one group per PR (`…-pr-<number>`) with cancel-in-progress: true.
-#     When an event has exactly one associated PR, use its number; otherwise fall
-#     back to the unique-per-run group to avoid cross-PR cancellation.
+#     onto one group per PR head commit (`…-pr-<number>-<head_sha>`) with
+#     cancel-in-progress: true. Keying on the head SHA means only duplicate runs
+#     for the SAME commit supersede each other; a newer commit on the same PR
+#     opens its own group and never cancels the older commit's in-flight run
+#     (stale-commit cancellation fix).
+#     When an event has exactly one associated PR, use its number plus the head
+#     SHA; otherwise fall back to the unique-per-run group to avoid cross-PR
+#     cancellation.
 #   • pull_request / pull_request_review — run on the PR head; a cancelled run
 #     would leave a cancelled `pr-auto-review / check-and-dispatch` check on the
 #     head. They get a unique-per-run group and never cancel, so they behave

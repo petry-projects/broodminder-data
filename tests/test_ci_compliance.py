@@ -214,9 +214,15 @@ def test_pr_auto_review_concurrency_group_matches_canonical():
         "!github.event.check_suite.pull_requests[1]",
         "github.event.workflow_run.pull_requests[0].number",
         "!github.event.workflow_run.pull_requests[1]",
-        "format('pr-auto-review-ready-check-pr-{0}-{1}'",
-        "github.event.check_suite.head_sha",
-        "github.event.workflow_run.head_sha",
+        # Pin the COMPLETE per-PR format calls, not the placeholder and the
+        # head_sha references as independent substrings. This guards the full
+        # argument wiring — the `{1}` slot must be bound to the matching event's
+        # head_sha, in order — so a drift that keeps a stray head_sha reference
+        # while dropping the SHA from the group-key argument (or swapping the
+        # argument order) can no longer satisfy the assertions and silently
+        # reintroduce the stale-commit cancellation this fix prevents.
+        "format('pr-auto-review-ready-check-pr-{0}-{1}', github.event.check_suite.pull_requests[0].number, github.event.check_suite.head_sha)",
+        "format('pr-auto-review-ready-check-pr-{0}-{1}', github.event.workflow_run.pull_requests[0].number, github.event.workflow_run.head_sha)",
         "format('pr-auto-review-ready-check-unique-{0}', github.run_id)",
     ]
     for expr in required_expressions:

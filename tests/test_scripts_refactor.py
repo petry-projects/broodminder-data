@@ -406,13 +406,15 @@ def test_log_window_silent_when_empty(capsys):
 
 
 # ---------------------------------------------------------------------------
-# discover._sample
+# discover.sample_endpoint
+# (formerly `_sample`; renamed and re-signatured during the S3776 refactor —
+# sample/error are now stored under `<key>_sample` / `<key>_error`)
 # ---------------------------------------------------------------------------
 def test_sample_success(capsys):
     out = {}
-    discover._sample(out, "label", lambda: {"x": 1}, "ok", "err", "msg", 100)
-    assert out["ok"] == {"x": 1}
-    assert "err" not in out
+    discover.sample_endpoint(out, "label", "→ header", "label", lambda: {"x": 1}, 100)
+    assert out["label_sample"] == {"x": 1}
+    assert "label_error" not in out
 
 
 def test_sample_error(capsys):
@@ -421,10 +423,10 @@ def test_sample_error(capsys):
     def bad_fetch():
         raise BroodMinderError(404, "GET", "/x", "not found")
 
-    discover._sample(out, "label", bad_fetch, "ok", "err", "msg", 100)
-    assert "ok" not in out
-    assert "err" in out
-    assert "not found" in out["err"]
+    discover.sample_endpoint(out, "label", "→ header", "label", bad_fetch, 100)
+    assert "label_sample" not in out
+    assert "label_error" in out
+    assert "not found" in out["label_error"]
 
 
 # ---------------------------------------------------------------------------
@@ -433,6 +435,9 @@ def test_sample_error(capsys):
 def _make_args(no_notes=False):
     args = MagicMock()
     args.no_notes = no_notes
+    # fetch_window now guards the notes call against the call budget
+    # (`bm.call_count >= args.max_calls`), so max_calls must be a real int.
+    args.max_calls = 900
     return args
 
 

@@ -44,6 +44,12 @@ def test_extract_battery_invalid_value():
     assert extract_battery({"batteryLevel": "invalid"}) is None
 
 
+def test_extract_battery_non_finite_values():
+    assert extract_battery({"batteryLevel": "Infinity"}) is None
+    assert extract_battery({"batteryLevel": "-Infinity"}) is None
+    assert extract_battery({"batteryLevel": float('inf')}) is None
+
+
 def test_extract_battery_clamping():
     assert extract_battery({"batteryLevel": 110}) == 100
     assert extract_battery({"batteryLevel": -5}) == 0
@@ -132,6 +138,26 @@ def test_evaluate_device_health_stale_not_reporting():
     assert d.days_offline is not None
     assert d.days_offline >= 8.0
     assert any("not reporting" in r.lower() or "stale" in r.lower() for r in d.reasons)
+
+
+def test_evaluate_device_health_exactly_7_days_not_stale():
+    now_ts = 1700000000
+    exactly_seven_days_ago = now_ts - (7 * 86400)
+    readings = [
+        {
+            "deviceId": "dev-4b",
+            "hiveId": "hive-3",
+            "hiveName": "Hive Gamma",
+            "timestamp": exactly_seven_days_ago,
+            "batteryLevel": 88,
+        }
+    ]
+    results = evaluate_device_health(readings, now_ts=now_ts, threshold=80, stale_days=7)
+    d = results[0]
+    assert d.status == "OK"
+    assert not d.needs_attention
+    assert d.days_offline is not None
+    assert d.days_offline == 7.0
 
 
 def test_evaluate_device_health_both_low_and_stale():

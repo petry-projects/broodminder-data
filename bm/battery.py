@@ -57,7 +57,7 @@ def extract_battery(reading: dict[str, Any]) -> int | None:
         val = int(round(float(raw)))
         # Clamp to realistic 0-100% bounds
         return max(0, min(100, val))
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, OverflowError):
         return None
 
 
@@ -119,7 +119,7 @@ def _evaluate_reading(
     if last_epoch is not None:
         days_offline = round(max(0, ref_ts - last_epoch) / 86400.0, 1)
 
-    is_stale = days_offline is not None and days_offline >= stale_days
+    is_stale = days_offline is not None and days_offline > stale_days
     reasons: list[str] = []
     if is_stale:
         reasons.append(f"Not reporting ({days_offline:.1f} days offline > {stale_days}d threshold)")

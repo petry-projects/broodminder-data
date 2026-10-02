@@ -126,12 +126,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_PAT_DON_PETRY || secrets.GH_PAT_WORKFLOWS }}
           ARL_ACTOR: ${{ github.actor }}
           ARL_TRACKING_REPO: ${{ github.repository }}
-          # For issue events use the event's issue number; for schedule/workflow_dispatch
-          # fall back to a configured repo variable so argate_escalate can post the
-          # breaker marker and apply the needs-human-review label (both are skipped when
-          # tracking_issue is empty). Set INITIATIVE_DRIVER_TRACKING_ISSUE to the epic
-          # or operations issue number for this repo to enable escalation on non-issue runs.
-          ARL_TRACKING_ISSUE: ${{ github.event.issue.number || vars.INITIATIVE_DRIVER_TRACKING_ISSUE || '' }}
+          # On a `labeled` event (arming an epic) use that epic's own issue number.
+          # For `closed` events — plus schedule/workflow_dispatch — use the configured
+          # tracking issue instead: a closed issue is often a sub-issue, not the
+          # operations/epic issue, so routing escalation to github.event.issue.number
+          # there would post the breaker marker and apply needs-human-review to the
+          # wrong (closed) issue. argate_escalate skips both when tracking_issue is
+          # empty. Set INITIATIVE_DRIVER_TRACKING_ISSUE to the epic or operations
+          # issue number for this repo to enable escalation on closed/non-issue runs.
+          ARL_TRACKING_ISSUE: ${{ (github.event.action == 'labeled' && github.event.issue.number) || vars.INITIATIVE_DRIVER_TRACKING_ISSUE || '' }}
         run: |
           set -euo pipefail
           bash .arl-gate-tooling/scripts/agent-rate-limit-gate.sh initiative-driver \

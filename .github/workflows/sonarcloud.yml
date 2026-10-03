@@ -60,7 +60,12 @@ jobs:
             sleep "$((attempt * 5))"
           done
       - name: Generate coverage report
-        run: python -m pytest --cov=bm --cov=scripts --cov-report=xml:coverage.xml -q
+        # Measure from the repo root (not --cov=bm --cov=scripts) so coverage.xml
+        # records project-root-relative, package-qualified paths (bm/battery.py,
+        # scripts/battery.py). Per-package roots collapsed both files to a bare
+        # "battery.py", which SonarCloud could not resolve → ~1% new-code coverage.
+        # Scope/omit live in [tool.coverage.run] in pyproject.toml.
+        run: python -m pytest --cov=. --cov-report=xml:coverage.xml -q
       - name: SonarCloud Scan
         id: sonar
         if: env.SONAR_TOKEN != ''

@@ -59,7 +59,10 @@ jobs:
         # GH_TOKEN enables the live ruleset compliance check (issue #91).
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python -m pytest -q --cov=bm --cov=scripts --cov-report=xml --cov-report=term
+        # Measure from the repo root (scope/omit live in [tool.coverage.run]) so
+        # coverage records package-qualified paths; per-package roots collide
+        # bm/battery.py and scripts/battery.py to a bare "battery.py".
+        run: python -m pytest -q --cov=. --cov-report=xml --cov-report=term
 
   secret-scan:
     name: Secret scan (gitleaks)

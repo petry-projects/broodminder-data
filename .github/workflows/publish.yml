@@ -1,6 +1,8 @@
 name: Publish to PyPI
 
 on:
+  push:
+    branches: [main]
   release:
     types: [published]
   workflow_dispatch:
@@ -13,17 +15,119 @@ on:
 permissions:
   contents: read
 
+# Serialize publication runs so two rapid merges to main cannot both reach the
+# tag/release-creation step and race. cancel-in-progress: false queues runs
+# instead of cancelling an in-flight publish.
+concurrency:
+  group: pypi-publish
+  cancel-in-progress: false
+
 jobs:
-  publish:
-    name: Build & Publish to PyPI
+  prepare:
+    name: Determine version & release status
     runs-on: ubuntu-latest
-    environment:
-      name: pypi
-      url: https://pypi.org/p/broodminder-data
     permissions:
       contents: read
-      id-token: write  # Mandatory for PyPI Trusted Publishing (OIDC)
+    outputs:
+      version: ${{ steps.check_version.outputs.version }}
+      tag: ${{ steps.check_version.outputs.tag }}
+      should_publish: ${{ steps.check_version.outputs.should_publish }}
+      create_release: ${{ steps.check_version.outputs.create_release }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
 
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Check package version and release status
+        id: check_version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(python scripts/pypi_onboard.py --version)
+          if [ -z "${VERSION}" ]; then
+            echo "::error::Could not extract version from pyproject.toml"
+            exit 1
+          fi
+
+          TAG="v${VERSION}"
+          echo "Package version: ${VERSION} (${TAG})"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+            echo "create_release=false" >> "$GITHUB_OUTPUT"
+            echo "Triggered manually via workflow_dispatch."
+          elif [ "${EVENT_NAME}" = "release" ]; then
+            # Only publish when the release tag matches the packaged version, so a
+            # release cut for a different tag cannot publish mismatched metadata.
+            if [ "${RELEASE_TAG}" != "${TAG}" ]; then
+              echo "::error::Release tag '${RELEASE_TAG}' does not match package version tag '${TAG}'; refusing to publish mismatched metadata."
+              echo "should_publish=false" >> "$GITHUB_OUTPUT"
+              echo "create_release=false" >> "$GITHUB_OUTPUT"
+              exit 1
+            fi
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+            echo "create_release=false" >> "$GITHUB_OUTPUT"
+            echo "Triggered via published release ${TAG}."
+          elif [ "${EVENT_NAME}" = "push" ]; then
+            # Fail closed on a tag-fetch error: a transient failure must not look
+            # like "no tag exists" and trigger an unintended publish.
+            if ! git fetch --tags origin; then
+              echo "::error::Failed to fetch tags from origin; aborting rather than treating it as a missing tag."
+              exit 1
+            fi
+            # Gate on the unit-tested helper (scripts.pypi_onboard.should_release_version),
+            # feeding it the existing git tags, so the tested logic guards the real publish.
+            # Capture into a variable (not inline in the `if`) so a broken gate — import
+            # error, refactored module, unexpected stderr — aborts the step loudly instead
+            # of returning "" and silently taking the "tag already exists" branch.
+            if ! SHOULD_RELEASE=$(python -c 'import sys; from scripts.pypi_onboard import should_release_version; print("true" if should_release_version(sys.argv[1], sys.argv[2:]) else "false")' "${VERSION}" $(git tag)); then
+              echo "::error::Release gate (scripts.pypi_onboard.should_release_version) failed to run; aborting rather than skipping the release."
+              exit 1
+            fi
+            if [ "${SHOULD_RELEASE}" != "true" ]; then
+              echo "Tag ${TAG} already exists. Version ${VERSION} is already published or tagged."
+              echo "should_publish=false" >> "$GITHUB_OUTPUT"
+              echo "create_release=false" >> "$GITHUB_OUTPUT"
+            elif gh release view "${TAG}" >/tmp/gh_release_out 2>/tmp/gh_release_err; then
+              # A GitHub Release exists even though the local tag check passed.
+              echo "Release ${TAG} already exists. Version ${VERSION} is already published."
+              echo "should_publish=false" >> "$GITHUB_OUTPUT"
+              echo "create_release=false" >> "$GITHUB_OUTPUT"
+            elif grep -qi "release not found" /tmp/gh_release_err; then
+              echo "New version ${VERSION} detected on main without git tag or release ${TAG}."
+              echo "should_publish=true" >> "$GITHUB_OUTPUT"
+              echo "create_release=true" >> "$GITHUB_OUTPUT"
+            else
+              # A real lookup error (auth, rate limit, network) — fail closed.
+              echo "::error::Failed to query GitHub release ${TAG}: $(cat /tmp/gh_release_err)"
+              exit 1
+            fi
+          else
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+            echo "create_release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: Build distributions
+    needs: prepare
+    if: needs.prepare.outputs.should_publish == 'true'
+    runs-on: ubuntu-latest
+    # No id-token here: `python -m build` executes the project's build backend and
+    # dependency hooks. Keeping this job free of id-token: write prevents a
+    # compromised build dependency from minting the PyPI Trusted Publisher token.
+    permissions:
+      contents: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -46,17 +150,90 @@ jobs:
       - name: Verify package metadata with twine
         run: twine check --strict dist/*
 
-      - name: Dry-run verification
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
-        run: |
-          echo "=== DRY RUN: Artifacts built and verified successfully ==="
-          ls -la dist/
-          echo "Package is verified and ready for PyPI publication."
+      - name: Upload built distributions
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: Publish to PyPI
+    needs: [prepare, build]
+    if: >-
+      needs.prepare.outputs.should_publish == 'true' &&
+      (github.event_name != 'workflow_dispatch' || !inputs.dry_run)
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/broodminder-data
+    permissions:
+      id-token: write  # Mandatory for PyPI Trusted Publishing (OIDC)
+    steps:
+      - name: Download built distributions
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: dist
+          path: dist/
 
       - name: Publish package distributions to PyPI
-        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run) }}
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           packages-dir: dist/
           verify-metadata: true
           skip-existing: true
+
+  dry-run:
+    name: Dry-run verification
+    needs: [prepare, build]
+    if: >-
+      needs.prepare.outputs.should_publish == 'true' &&
+      github.event_name == 'workflow_dispatch' && inputs.dry_run
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Download built distributions
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: dist
+          path: dist/
+
+      - name: Report built artifacts
+        run: |
+          echo "=== DRY RUN: Artifacts built and verified successfully ==="
+          ls -la dist/
+          echo "Package is verified and ready for PyPI publication."
+
+  release:
+    name: Create GitHub Release and git tag
+    needs: [prepare, publish]
+    if: needs.prepare.outputs.create_release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Create GitHub Release and git tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          # Idempotent creation: if another serialized run already created the
+          # release or tag, treat it as success instead of failing the merge.
+          if gh release view "${TAG}" >/dev/null 2>&1 || git rev-parse --verify "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "Release ${TAG} already exists; skipping creation."
+          else
+            echo "Creating GitHub Release ${TAG}..."
+            gh release create "${TAG}" \
+              --title "v${VERSION}" \
+              --generate-notes \
+              --target "${{ github.sha }}"
+            echo "GitHub Release ${TAG} created successfully."
+          fi

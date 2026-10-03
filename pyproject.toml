@@ -39,6 +39,9 @@ dev = [
     "twine>=5.0",
 ]
 
+[project.scripts]
+broodminder-battery = "bm.battery:main"
+
 [project.urls]
 Homepage = "https://github.com/petry-projects/broodminder-data"
 Documentation = "https://github.com/petry-projects/broodminder-data#readme"
@@ -59,12 +62,25 @@ markers = [
 
 [tool.coverage.run]
 branch = true
-source = ["bm", "scripts"]
+# Measure from the project root so coverage.xml records package-qualified,
+# project-root-relative paths ("bm/battery.py", "scripts/battery.py"). Scoping
+# to two sibling package roots instead (source = ["bm", "scripts"]) made
+# coverage strip both prefixes to a bare "battery.py", colliding the two files
+# into one record — SonarCloud then matched almost nothing and reported ~1%
+# coverage on new code. relative_files keeps the paths repo-relative so the
+# SonarCloud importer resolves them against sonar.sources. See sonarcloud.yml.
+source = ["."]
+relative_files = true
+omit = ["tests/*", ".venv/*", "*/__pycache__/*", "setup.py"]
 
 [tool.coverage.report]
 precision = 2
 show_missing = true
 skip_covered = false
+exclude_also = [
+    # CLI entry guards only run on direct execution, not under import-based tests.
+    "if __name__ == .__main__.:",
+]
 
 [build-system]
 requires = ["setuptools>=68"]

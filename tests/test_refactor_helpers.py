@@ -153,6 +153,31 @@ def test_process_hive_commits_partial_on_midwindow_budget(tmp_path):
     assert saved                                       # manifest flushed before raise
 
 
+def test_process_hive_resumes_pending_notes(tmp_path):
+    # The mid-window resume branch: a prior run wrote readings but hit the
+    # budget before notes, leaving a `notes_pending` record. With budget
+    # headroom, a resumed process_hive must fetch the notes exactly once, set
+    # `rec["notes"]`, clear the `notes_pending` flag, and flush the manifest so
+    # the recovery is durable.
+    bm = _FakeBM([{"positionID": "p", "readings": [{"timestamp": 1}]}], [{"d": "n"}])
+    bm.call_count = 0  # plenty of budget headroom (max_calls=900)
+    # A prior run already wrote this hive's readings, so its directory exists.
+    (tmp_path / "H1").mkdir()
+    completed = {
+        "H1|0|100": {"reading_rows": 1, "notes_pending": True},
+    }
+    saved = []
+    extract_all.process_hive(bm, {"apiaryId": "A", "name": "Api"},
+                             {"hiveId": "H1", "name": "Hive"},
+                             [(0, 100)], _args(max_calls=900), tmp_path, completed,
+                             lambda: saved.append(1))
+    rec = completed["H1|0|100"]
+    assert bm.call_count == 1               # hive_notes called exactly once
+    assert rec["notes"] == 1                # notes count recorded
+    assert "notes_pending" not in rec       # pending flag cleared
+    assert saved                            # manifest flushed after resume
+
+
 def test_process_hive_stop_after_empty_forward_no_stop(tmp_path):
     # In forward mode (reverse=False), stop_after_empty has no effect, so an
     # empty window must not truncate a chronological extraction.

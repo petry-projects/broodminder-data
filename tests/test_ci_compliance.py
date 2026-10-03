@@ -168,6 +168,14 @@ def test_dev_lead_uses_ref_matches_agent_ref():
 # unique-per-run group (issue #1126). A stub that drops or alters this block has
 # drifted from canonical and must be re-synced (stub-surface-drift check).
 #
+# IMPORTANT: This test validates the LOCAL stub against the EXPECTED canonical
+# pattern. When the canonical workflow in petry-projects/.github is updated
+# (e.g., adding head SHA to the concurrency group), the stub MUST be updated
+# first, then this test updated to validate the new pattern, and ONLY THEN
+# should the central canonical be updated to match. The test's required_expressions
+# must be kept in sync with the actual canonical workflow to maintain drift
+# detection.
+#
 # Ref: petry-projects/.github/standards/ci-standards.md#centralization-tiers
 
 
@@ -201,28 +209,24 @@ def test_pr_auto_review_concurrency_group_matches_canonical():
     assert "concurrency" in workflow
     concurrency = workflow["concurrency"]
 
+    # Validate group is a string expression
     group = concurrency.get("group")
     assert group, "concurrency.group must be defined"
-    group_str = str(group)
+    assert isinstance(group, str), "concurrency.group must be a string expression"
+    group_str = group
 
+    # Required subexpressions that must be present in the group expression
     required_expressions = [
-        "github.event.check_suite.pull_requests[0].number",
-        # Cardinality guard: collapse onto a per-PR group only when the event has
-        # exactly one associated PR; otherwise fall back to the unique-per-run
-        # group. Dropping this is the documented cross-PR cancellation failure
-        # (issue #1126) this drift check exists to catch.
+        # check_suite cardinality: exactly one PR (element [0] exists, [1] does not)
+        "github.event.check_suite.pull_requests[0]",
         "!github.event.check_suite.pull_requests[1]",
-        "github.event.workflow_run.pull_requests[0].number",
+        # workflow_run cardinality: exactly one PR (element [0] exists, [1] does not)
+        "github.event.workflow_run.pull_requests[0]",
         "!github.event.workflow_run.pull_requests[1]",
-        # Pin the COMPLETE per-PR format calls, not the placeholder and the
-        # head_sha references as independent substrings. This guards the full
-        # argument wiring — the `{1}` slot must be bound to the matching event's
-        # head_sha, in order — so a drift that keeps a stray head_sha reference
-        # while dropping the SHA from the group-key argument (or swapping the
-        # argument order) can no longer satisfy the assertions and silently
-        # reintroduce the stale-commit cancellation this fix prevents.
+        # Per-PR group keys with head_sha binding (guards full argument wiring)
         "format('pr-auto-review-ready-check-pr-{0}-{1}', github.event.check_suite.pull_requests[0].number, github.event.check_suite.head_sha)",
         "format('pr-auto-review-ready-check-pr-{0}-{1}', github.event.workflow_run.pull_requests[0].number, github.event.workflow_run.head_sha)",
+        # Fallback unique-per-run group for non-standard contexts
         "format('pr-auto-review-ready-check-unique-{0}', github.run_id)",
     ]
     for expr in required_expressions:
@@ -230,11 +234,15 @@ def test_pr_auto_review_concurrency_group_matches_canonical():
             f"pr-auto-review.yml concurrency.group has drifted from canonical; missing expression: {expr!r}"
         )
 
+    # Validate cancel-in-progress structure
     assert "cancel-in-progress" in concurrency, (
         "concurrency.cancel-in-progress must be defined"
     )
     cancel_in_progress = concurrency["cancel-in-progress"]
-    cancel_str = str(cancel_in_progress)
+    assert isinstance(cancel_in_progress, str), (
+        "concurrency.cancel-in-progress must be a string expression"
+    )
+    cancel_str = cancel_in_progress
     assert "github.event_name == 'check_suite'" in cancel_str, (
         "cancel-in-progress must check for check_suite event"
     )

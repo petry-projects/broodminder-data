@@ -48,7 +48,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Resumable, budget-aware bulk historical export (`scripts/extract_all.py`).
   - Incremental data flattener with deduplication into NDJSON and CSV (`scripts/flatten.py`).
 - Authoritative OpenAPI 3.1 specification for the External User API (`openapi/broodminder-openapi.yaml`) with Redocly linting and interactive docs preview.
-- Native Model Context Protocol (MCP) server architecture planned for LLM agent integration.
 - PyPI onboarding probe, build verification, and Trusted Publishing OIDC workflow.
 
 [Unreleased]: https://github.com/petry-projects/broodminder-data/compare/v0.1.4...HEAD

@@ -366,7 +366,7 @@ python scripts/pypi_onboard.py
 
 ## 📋 Changelog & Release Notes
 
-All notable changes across releases are documented in [CHANGELOG.md](CHANGELOG.md) following [Keep a Changelog](https://keepachangelog.com/) standards. Releases are also tagged and detailed on [GitHub Releases](https://github.com/petry-projects/broodminder-data/releases).
+All notable changes across releases are documented in [CHANGELOG.md](https://github.com/petry-projects/broodminder-data/blob/main/CHANGELOG.md) following [Keep a Changelog](https://keepachangelog.com/) standards. Releases are also tagged and detailed on [GitHub Releases](https://github.com/petry-projects/broodminder-data/releases).
 
 ---
 

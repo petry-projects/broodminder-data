@@ -420,8 +420,7 @@ broodminder-data/
 ├── bm/
 │   ├── __init__.py
 │   ├── battery.py           # Battery health & offline sensor monitor
-│   ├── client.py            # Reusable BroodMinderClient (auth, retry, windowing)
-│   └── mcp_server.py        # FastMCP server for AI agents
+│   └── client.py            # Reusable BroodMinderClient (auth, retry, windowing)
 ├── scripts/
 │   ├── battery_health.py    # Battery health & offline sensor CLI
 │   ├── discover.py          # Auth check + account topology/schema sample

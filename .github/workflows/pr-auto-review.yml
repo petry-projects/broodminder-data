@@ -44,6 +44,40 @@ on:
 
 permissions: {}
 
+# Deduplicate ONLY the default-branch-context triggers (issue #1126). On GitHub
+# Free (20 concurrent jobs, org-wide) this stub fanned out per trigger. Its runs
+# split by context:
+#   • check_suite / workflow_run — head_branch=main, the check does NOT attach to
+#     the PR head, so superseding an in-flight run is SAFE. Both events collapse
+#     onto one group per PR head commit (`…-pr-<number>-<head_sha>`) with
+#     cancel-in-progress: true. Keying on the head SHA means only duplicate runs
+#     for the SAME commit supersede each other; a newer commit on the same PR
+#     opens its own group and never cancels the older commit's in-flight run
+#     (stale-commit cancellation fix).
+#     When an event has exactly one associated PR, use its number plus the head
+#     SHA; otherwise fall back to the unique-per-run group to avoid cross-PR
+#     cancellation.
+#   • pull_request / pull_request_review — run on the PR head; a cancelled run
+#     would leave a cancelled `pr-auto-review / check-and-dispatch` check on the
+#     head. They get a unique-per-run group and never cancel, so they behave
+#     exactly as before.
+# A default-branch trigger with no associated PR (fork / no PR) also falls back to
+# the unique-per-run group so unrelated PRs never collapse into one group.
+concurrency:
+  group: >-
+    ${{
+    ((github.event_name == 'check_suite'
+      && github.event.check_suite.pull_requests[0]
+      && !github.event.check_suite.pull_requests[1])
+      && format('pr-auto-review-ready-check-pr-{0}-{1}', github.event.check_suite.pull_requests[0].number, github.event.check_suite.head_sha))
+    || ((github.event_name == 'workflow_run'
+      && github.event.workflow_run.pull_requests[0]
+      && !github.event.workflow_run.pull_requests[1])
+      && format('pr-auto-review-ready-check-pr-{0}-{1}', github.event.workflow_run.pull_requests[0].number, github.event.workflow_run.head_sha))
+    || format('pr-auto-review-ready-check-unique-{0}', github.run_id)
+    }}
+  cancel-in-progress: ${{ github.event_name == 'check_suite' || github.event_name == 'workflow_run' }}
+
 jobs:
   pr-auto-review:
     permissions:

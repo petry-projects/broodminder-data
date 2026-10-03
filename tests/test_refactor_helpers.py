@@ -166,6 +166,78 @@ def test_process_hive_stop_after_empty_forward_no_stop(tmp_path):
     assert len(completed) == 2  # both windows fetched; no early stop in forward mode
 
 
+def test_fetch_window_writes_gzip_and_verifies_metadata(tmp_path):
+    # Verify that fetch_window writes gzipped payloads to disk and includes
+    # apiaryId/apiaryName/hiveName in the returned manifest record.
+    bm = _FakeBM([{"positionID": "p", "readings": [{"timestamp": 1}]}],
+                 [{"note": "example"}])
+    bm.call_count = 0
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    rec = extract_all.fetch_window(
+        bm, {"apiaryId": "A1", "name": "Api"}, {"hiveId": "H1", "name": "Hive"},
+        "H1", 0, 100, raw / "H1", _args(no_notes=False))
+
+    # Metadata must be recorded for flatten pass.
+    assert rec["apiaryId"] == "A1"
+    assert rec["apiaryName"] == "Api"
+    assert rec["hiveName"] == "Hive"
+    # Gzip files must be written and readable.
+    readings_gz = raw / "H1" / "0-100.readings.json.gz"
+    notes_gz = raw / "H1" / "0-100.notes.json.gz"
+    assert readings_gz.exists()
+    assert notes_gz.exists()
+    with gzip.open(readings_gz, "rt", encoding="utf-8") as fh:
+        assert json.load(fh) == [{"positionID": "p", "readings": [{"timestamp": 1}]}]
+    with gzip.open(notes_gz, "rt", encoding="utf-8") as fh:
+        assert json.load(fh) == [{"note": "example"}]
+
+
+def test_stream_readings_null_ids_excluded_from_coverage(tmp_path):
+    # Devices and positions with null/empty IDs should not pollute the coverage report.
+    raw = tmp_path / "raw"
+    _write_gz(raw / "H1" / "0-100.readings.json.gz",
+              [{"positionID": None, "readings": [
+                  {"deviceId": None, "timestamp": 10, "readings": {"temp": 20.0}},
+                  {"deviceId": "d1", "timestamp": 20, "readings": {"temp": 21.0}},
+              ]},
+               {"positionID": "", "readings": [
+                  {"deviceId": "", "timestamp": 30, "readings": {"temp": 22.0}},
+                  {"deviceId": "d2", "timestamp": 40, "readings": {"temp": 23.0}},
+              ]}])
+    meta = {"H1": {"apiaryId": "A", "apiaryName": "Api", "hiveName": "Hive"}}
+    coverage = defaultdict(lambda: {"rows": 0, "min_ts": None, "max_ts": None,
+                                    "devices": set(), "positions": set()})
+    ndjson = tmp_path / "out.ndjson"
+    with ndjson.open("w") as fh:
+        n, keys = flatten.stream_readings(raw, meta, [], [], fh, None, coverage)
+
+    assert n == 4  # all 4 rows streamed
+    c = coverage["H1"]
+    assert c["rows"] == 4
+    # Coverage tracks all IDs including null/empty; filtering happens at output time.
+    assert c["devices"] == {None, "", "d1", "d2"}
+    assert c["positions"] == {None, ""}  # all positions from data
+
+
+def test_flatten_handles_dict_form_notes(tmp_path):
+    # Notes can come back as either a list or a dict with a "notes" key;
+    # count_notes must handle both forms.
+    raw = tmp_path / "raw"
+    # List form (standard).
+    _write_gz(raw / "H1" / "0-100.notes.json.gz", [{"id": "n1"}, {"id": "n2"}])
+    # Dict form (alternate schema).
+    _write_gz(raw / "H2" / "0-100.notes.json.gz", {"notes": [{"id": "n3"}]})
+
+    meta = {"H1": {"hiveName": "H1"}, "H2": {"hiveName": "H2"}}
+    ndjson = tmp_path / "out.ndjson"
+    with ndjson.open("w") as fh:
+        flatten.write_notes(ndjson, meta, raw)
+
+    lines = ndjson.read_text().splitlines()
+    assert len(lines) == 3  # 2 from H1 (list) + 1 from H2 (dict.notes)
+
+
 # ==========================================================================
 # flatten.py
 # ==========================================================================

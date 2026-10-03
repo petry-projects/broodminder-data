@@ -164,6 +164,7 @@ def fetch_window(bm, a, h, hid: str, s: int, e: int, hdir: Path, args) -> dict:
         # Readings are already written to disk, so hand the readings-only
         # record back to the caller to persist before stopping.
         if bm.call_count >= args.max_calls:
+            rec["notes_pending"] = True
             raise _BudgetExhausted(rec)
         notes = bm.hive_notes(hid, s, e)
         write_gz(hdir / f"{s}-{e}.notes.json.gz", notes)
@@ -182,9 +183,20 @@ def process_hive(bm, a, h, wins, args, raw: Path, completed: dict, save_manifest
     for s, e in wins:
         key = f"{hid}|{s}|{e}"
         if key in completed:
+            rec = completed[key]
+            # Fetch pending notes if budget allows (mid-window resume: readings done, notes skipped).
+            if rec.get("notes_pending") and not args.no_notes and bm.call_count < args.max_calls:
+                try:
+                    notes = bm.hive_notes(hid, s, e)
+                    write_gz(hdir / f"{s}-{e}.notes.json.gz", notes)
+                    rec["notes"] = count_notes(notes)
+                    del rec["notes_pending"]
+                    save_manifest()
+                except BudgetExhausted:
+                    raise
             # Honor early-exit using cached row counts too, so a resumed
             # backfill doesn't walk past the known data edge.
-            consecutive_empty = _bump_empty(args, consecutive_empty, completed[key].get("reading_rows", 0))
+            consecutive_empty = _bump_empty(args, consecutive_empty, rec.get("reading_rows", 0))
             if _stop(args, consecutive_empty):
                 break
             continue

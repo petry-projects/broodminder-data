@@ -134,7 +134,8 @@ def stream_readings(raw_root, meta, base_cols, metric_cols, ndjson_fh, csv_write
             if csv_writer:
                 csv_writer.writerow({k: row.get(k) for k in base_cols + metric_cols})
             n_rows += 1
-            metric_keys.update(k[2:] for k in row if k.startswith("m_"))
+            if not csv_writer:
+                metric_keys.update(k[2:] for k in row if k.startswith("m_"))
             accumulate_coverage(coverage, row)
     return n_rows, metric_keys
 

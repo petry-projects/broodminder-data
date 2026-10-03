@@ -75,6 +75,7 @@ We are tracking each expanded capability in GitHub Discussions. Join the convers
 - [Model Context Protocol (MCP) Server](#model-context-protocol-mcp-server)
 - [Python SDK Usage](#python-sdk-usage)
 - [PyPI Packaging & Automated Publishing](#pypi-packaging--automated-publishing)
+- [📋 Changelog & Release Notes](#-changelog--release-notes)
 - [Output Files & Schema](#output-files--schema)
 - [API Behavior & Rate Limits](#api-behavior--rate-limits)
 - [Testing & Quality Gates](#testing--quality-gates)
@@ -363,6 +364,12 @@ python scripts/pypi_onboard.py
 
 ---
 
+## 📋 Changelog & Release Notes
+
+All notable changes across releases are documented in [CHANGELOG.md](https://github.com/petry-projects/broodminder-data/blob/main/CHANGELOG.md) following [Keep a Changelog](https://keepachangelog.com/) standards. Releases are also tagged and detailed on [GitHub Releases](https://github.com/petry-projects/broodminder-data/releases).
+
+---
+
 ## Output Files & Schema
 
 Extracted data is saved under `data/extract/` (git-ignored):
@@ -412,24 +419,30 @@ python3 -m compileall bm scripts tests
 broodminder-data/
 ├── bm/
 │   ├── __init__.py
+│   ├── battery.py           # Battery health & offline sensor monitor
 │   └── client.py            # Reusable BroodMinderClient (auth, retry, windowing)
 ├── scripts/
+│   ├── battery_health.py    # Battery health & offline sensor CLI
 │   ├── discover.py          # Auth check + account topology/schema sample
 │   ├── extract_all.py       # Resumable, budget-aware extraction (--catchup)
 │   ├── flatten.py           # Raw → NDJSON/CSV/coverage (--merge)
+│   ├── pypi_onboard.py      # PyPI availability probe, build, and verification
 │   ├── cron_sync.sh         # Routine unattended forward catch-up sync
 │   └── cron_backfill.sh     # Initial unattended multi-day backfill
 ├── tests/
 │   ├── conftest.py
+│   ├── test_battery.py      # Fast deterministic battery health unit tests
 │   ├── test_offline.py      # Fast deterministic unit tests
+│   ├── test_packaging.py    # Package metadata, PyPI probe, and publish CI tests
 │   ├── test_scripts_refactor.py # Script unit test coverage
 │   └── test_contract.py     # Live contract tests (skip without key)
 ├── openapi/
 │   └── broodminder-openapi.yaml # OpenAPI 3.1 specification
 ├── openapi.yaml -> openapi/broodminder-openapi.yaml # Root symlink
 ├── redocly.yaml             # Redocly linting & preview configuration
+├── pyproject.toml           # Build configuration & metadata
 ├── requirements.txt         # Runtime dependencies
-└── pyproject.toml           # Build configuration & metadata
+└── CHANGELOG.md             # Keep a Changelog release history
 ```
 
 ---

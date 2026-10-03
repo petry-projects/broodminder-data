@@ -25,8 +25,7 @@ broodminder-data/
 ├── bm/
 │   ├── __init__.py           # Public exports
 │   ├── battery.py            # Battery health & offline sensor evaluation engine
-│   ├── client.py             # Reusable BroodMinderClient (auth, retry, windowing)
-│   └── mcp_server.py         # FastMCP server for AI agents
+│   └── client.py             # Reusable BroodMinderClient (auth, retry, windowing)
 ├── scripts/
 │   ├── battery_health.py     # Battery health & offline sensor inspection CLI
 │   ├── discover.py           # Account topology and schema inspection
@@ -47,7 +46,8 @@ broodminder-data/
 ├── openapi.yaml              # Root symlink to openapi/broodminder-openapi.yaml
 ├── redocly.yaml              # Redocly linting and documentation preview rules
 ├── pyproject.toml            # PEP 621 build configuration with optional extras
-└── requirements.txt          # Runtime dependencies
+├── requirements.txt          # Runtime dependencies
+└── CHANGELOG.md              # Keep a Changelog release history
 ```
 
 ---

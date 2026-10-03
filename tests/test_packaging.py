@@ -47,6 +47,7 @@ def test_pyproject_toml_structure():
     urls = project.get("urls", {})
     assert "https://github.com/petry-projects/broodminder-data" in urls.get("Homepage", "")
     assert "https://github.com/petry-projects/broodminder-data" in urls.get("Repository", "")
+    assert urls.get("Changelog") == "https://github.com/petry-projects/broodminder-data/blob/main/CHANGELOG.md"
 
     opt_deps = project.get("optional-dependencies", {})
     assert "mcp" in opt_deps
@@ -188,4 +189,20 @@ def test_publish_workflow_structure():
             assert len(parts) == 2, f"Action reference must be pinned with @: {line}"
             ref_part = parts[1].split()[0]
             assert len(ref_part) == 40, f"Action must be pinned to 40-character SHA: {line}"
+
+
+def test_changelog_structure():
+    changelog_path = ROOT / "CHANGELOG.md"
+    assert changelog_path.exists()
+    content = changelog_path.read_text(encoding="utf-8")
+    assert "# Changelog" in content
+    assert "## [Unreleased]" in content
+    assert f"## [{EXPECTED_VERSION}]" in content
+    assert "## [0.1.3]" in content
+    assert "## [0.1.2]" in content
+    assert "## [0.1.1]" in content
+    assert "## [0.1.0]" in content
+    assert "[Unreleased]:" in content
+    assert f"[{EXPECTED_VERSION}]:" in content
+
 

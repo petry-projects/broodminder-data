@@ -1,6 +1,6 @@
 [project]
 name = "broodminder-data"
-version = "0.1.3"
+version = "0.1.4"
 description = "Unified Python client, CLI, bulk export, periodic delta sync, OpenAPI 3.1 spec, and MCP server for BroodMinder beehive data."
 readme = "README.md"
 license = "MIT"
@@ -47,6 +47,7 @@ broodminder-battery = "bm.battery:main"
 [project.urls]
 Homepage = "https://github.com/petry-projects/broodminder-data"
 Documentation = "https://github.com/petry-projects/broodminder-data#readme"
+Changelog = "https://github.com/petry-projects/broodminder-data/blob/main/CHANGELOG.md"
 Issues = "https://github.com/petry-projects/broodminder-data/issues"
 Discussions = "https://github.com/petry-projects/broodminder-data/discussions"
 Repository = "https://github.com/petry-projects/broodminder-data.git"

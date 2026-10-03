@@ -56,6 +56,15 @@ permissions: {}
 #     exactly as before.
 # A default-branch trigger with no associated PR (fork / no PR) also falls back to
 # the unique-per-run group so unrelated PRs never collapse into one group.
+#
+# cancel-in-progress is further gated on a SUCCESS conclusion (issue: "avoid
+# cancelling readiness checks with failing events"). A failed/cancelled
+# check_suite/workflow_run event must NOT supersede an in-flight readiness run
+# for the same PR: the reusable's `Resolve PR URL` step skips non-success
+# conclusions, so the replacement run would never evaluate the PR — cancelling
+# the good in-flight run would silently drop the auto-review dispatch until some
+# unrelated later event. Only a success-conclusion replacement actually performs
+# a readiness evaluation, so only it is allowed to cancel the prior run.
 concurrency:
   group: >-
     ${{
@@ -65,7 +74,11 @@ concurrency:
     && format('pr-auto-review-ready-check-pr-{0}', github.event.workflow_run.pull_requests[0].number)
     || format('pr-auto-review-ready-check-unique-{0}', github.run_id)
     }}
-  cancel-in-progress: ${{ github.event_name == 'check_suite' || github.event_name == 'workflow_run' }}
+  cancel-in-progress: >-
+    ${{
+    (github.event_name == 'check_suite' && github.event.check_suite.conclusion == 'success')
+    || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    }}
 
 jobs:
   pr-auto-review:

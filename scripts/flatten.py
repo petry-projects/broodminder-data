@@ -185,9 +185,9 @@ def main() -> int:
     base_cols = ["apiaryId", "apiaryName", "hiveId", "hiveName", "positionID",
                  "deviceId", "timestamp", "datetime", "batteryLevel", "chargeRemaining"]
 
-    # Pass 1: discover metric keys (stable, tiny set) so CSV has a fixed header.
-    # Only needed for the fixed CSV header; skip the extra read pass with --no-csv.
-    metric_keys = set() if args.no_csv else discover_metric_keys(RAW)
+    # Pass 1: discover metric keys (stable, tiny set) so CSV has a fixed header
+    # AND for accurate output reporting of metrics actually present in NDJSON.
+    metric_keys = discover_metric_keys(RAW)
     metric_cols = [f"m_{k}" for k in sorted(metric_keys)]
 
     # Pass 2: stream rows to gzipped ndjson (+ optional gzipped csv).

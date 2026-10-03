@@ -42,9 +42,14 @@ def walk_sample_ids(apiaries):
     hive_id = device_id = None
     for ap in containers or []:
         for hv in first(ap, "hives") or []:
-            hive_id = hive_id or first(hv, "hiveId", "id", "hiveID")
-            for dv in first(hv, "devices", "positions") or []:
-                device_id = device_id or first(dv, "deviceId", "id", "deviceID")
+            hv_id = first(hv, "hiveId", "id", "hiveID")
+            if hive_id is None and hv_id is not None:
+                hive_id = hv_id
+            # Only look for a device if we found hive_id and haven't found device_id yet
+            # and the current hive matches the hive_id we found
+            if hive_id == hv_id and device_id is None:
+                for dv in first(hv, "devices", "positions") or []:
+                    device_id = device_id or first(dv, "deviceId", "id", "deviceID")
     return hive_id, device_id
 
 

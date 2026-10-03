@@ -69,6 +69,8 @@ We are tracking each expanded capability in GitHub Discussions. Join the convers
   - [2. Bulk History Export](#2-bulk-history-export)
   - [3. Incremental Catch-up Sync](#3-incremental-catch-up-sync)
   - [4. Build Analysis-Ready Datasets](#4-build-analysis-ready-datasets)
+  - [5. Inspect Battery Health & Offline Sensors](#5-inspect-battery-health--offline-sensors)
+- [🔋 Battery Health & Offline Sensor Monitoring](#-battery-health--offline-sensor-monitoring)
 - [OpenAPI 3.1 Specification & Interactive Docs](#openapi-31-specification--interactive-docs)
 - [Model Context Protocol (MCP) Server](#model-context-protocol-mcp-server)
 - [Python SDK Usage](#python-sdk-usage)
@@ -207,6 +209,44 @@ Resume forward from each hive's latest extracted window:
 Convert raw windows into clean, de-duplicated NDJSON and CSV:
 ```bash
 .venv/bin/python scripts/flatten.py --merge
+```
+
+### 5. Inspect Battery Health & Offline Sensors
+Identify sensors that have low batteries or stopped reporting:
+```bash
+.venv/bin/python scripts/battery_health.py
+# or via entrypoint: broodminder-battery
+```
+
+---
+
+## 🔋 Battery Health & Offline Sensor Monitoring
+
+Answers the critical question: **"What batteries are low and need to be changed?"**
+
+In beehive deployments, two distinct conditions indicate battery replacement or inspection:
+1. **Low Battery (<80%):** Cold cluster and winter ambient temperatures accelerate coin-cell and alkaline voltage dropoff. Sensors dipping below 80% should be checked or replaced before winter cluster closure.
+2. **"Not Reporting" (Silent Dropouts):** When a battery fully dies in the field, the sensor simply goes dark. Sensors that have not reported data for more than 7 days are flagged as stale.
+
+```bash
+# Scan local dataset and show devices needing attention (<80% or >7d stale)
+.venv/bin/python scripts/battery_health.py
+
+# Show all devices including healthy ones
+.venv/bin/python scripts/battery_health.py --all
+
+# Custom warning thresholds
+.venv/bin/python scripts/battery_health.py --threshold 75 --stale-days 5
+
+# Filter by apiary
+.venv/bin/python scripts/battery_health.py --apiary "Home"
+
+# Export as JSON or CSV
+.venv/bin/python scripts/battery_health.py --format json
+.venv/bin/python scripts/battery_health.py --format csv
+
+# Automation/Alerting mode (exits with code 1 if devices need attention)
+.venv/bin/python scripts/battery_health.py --check
 ```
 
 ---

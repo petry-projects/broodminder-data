@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Detects silent dropouts ("not reporting" / stale sensors) with default 7-day cutoff.
   - Implemented core evaluation engine in `bm/battery.py` (`evaluate_battery_health`, `scan_device_health`, `print_health_summary`).
   - Added standalone CLI script `scripts/battery_health.py` and console script entrypoint `broodminder-battery`.
-  - Added deterministic unit test suite in `tests/test_battery.py` with 98.2% test coverage.
+  - Added deterministic unit test suite in `tests/test_battery.py` with 98.6% test coverage.
 - **Automated On-Merge Release Workflow:**
   - Added `push: branches: [main]` trigger in `.github/workflows/publish.yml` to automatically publish releases to PyPI and generate GitHub Releases when version is bumped.
   - Added version extraction and release gate helpers in `scripts/pypi_onboard.py` (`get_package_version`, `should_release_version`).

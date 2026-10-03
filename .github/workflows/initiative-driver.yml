@@ -184,6 +184,17 @@ jobs:
             exit "$rc"
           }
 
+      - name: Mark run as deferred
+        # When the gate decides to defer, mark this run so the gate script's
+        # run-history counter excludes it (preventing false-positive failure
+        # breaker resets and daily-budget consumption on deferred runs).
+        # Emits a job output so the gate script can filter deferred runs.
+        if: steps.arl_gate.outputs.decision == 'defer'
+        id: defer_marker
+        run: |
+          echo "is_deferred=true" >> "$GITHUB_OUTPUT"
+          echo "### :hourglass: Run deferred by rate-limit gate" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Dispatch central initiative-driver
         # Skipped (clean no-op) ONLY on an explicit `defer` — never a cancel, never
         # a job failure (#640, AC #1/#2). Fail-OPEN: an empty/missing decision (the
@@ -196,3 +207,18 @@ jobs:
           gh workflow run initiative-driver.yml \
             -R petry-projects/.github-private \
             -f target_repo=${{ github.repository }}
+
+      - name: Verify gate was not silently bypassed
+        # Fail-loud: if the gate step failed (and emitted no decision, or a
+        # malformed decision), detect the bypass at the run level so an operator
+        # watching run status sees a failure, not a silent green ungatedness.
+        # This catches tooling-checkout failures or gate-script errors that
+        # escape error annotations and trick the dispatch into running ungated.
+        if: |
+          steps.arl_gate.conclusion == 'failure'
+          && steps.arl_gate.outputs.decision == ''
+        run: |
+          msg="Agent rate-limit gate failed with no valid decision output — run is ungated."
+          echo "::error::${msg}"
+          echo "### :x: ${msg}" >> "$GITHUB_STEP_SUMMARY"
+          exit 1

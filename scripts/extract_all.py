@@ -44,7 +44,17 @@ class UnsafePathError(ValueError):
 
 
 class BudgetExhausted(RuntimeError):
-    """The API-call budget was reached; the run stops and can be resumed."""
+    """The API-call budget was reached; the run stops and can be resumed.
+
+    May carry a ``partial`` per-window record: readings that were already
+    fetched and written to disk before a *mid-window* budget guard fired
+    (notes skipped). The caller commits it to the manifest before stopping so
+    a resume skips this window instead of re-spending a call re-fetching it.
+    """
+
+    def __init__(self, partial: dict | None = None):
+        super().__init__()
+        self.partial = partial
 
 
 _BudgetExhausted = BudgetExhausted
@@ -151,8 +161,10 @@ def fetch_window(bm, a, h, hid: str, s: int, e: int, hdir: Path, args) -> dict:
     if not args.no_notes:
         # Check budget before making notes call, since retries may have
         # incremented call_count beyond what the pre-window check anticipated.
+        # Readings are already written to disk, so hand the readings-only
+        # record back to the caller to persist before stopping.
         if bm.call_count >= args.max_calls:
-            raise _BudgetExhausted
+            raise _BudgetExhausted(rec)
         notes = bm.hive_notes(hid, s, e)
         write_gz(hdir / f"{s}-{e}.notes.json.gz", notes)
         rec["notes"] = count_notes(notes)
@@ -180,7 +192,18 @@ def process_hive(bm, a, h, wins, args, raw: Path, completed: dict, save_manifest
             print(f"\n⏸  budget reached ({bm.call_count} calls). Resume later.")
             raise BudgetExhausted
 
-        rec = fetch_window(bm, a, h, hid, s, e, hdir, args)
+        try:
+            rec = fetch_window(bm, a, h, hid, s, e, hdir, args)
+        except BudgetExhausted as ex:
+            if ex.partial is not None:
+                # Readings were written before the mid-window budget guard
+                # fired; persist the readings-only record and flush the
+                # manifest so a resume skips this window rather than re-paying
+                # for its readings call.
+                completed[key] = ex.partial
+                save_manifest()
+                print(f"\n⏸  budget reached mid-window ({bm.call_count} calls). Resume later.")
+            raise
         completed[key] = rec
         consecutive_empty = _bump_empty(args, consecutive_empty, rec["reading_rows"])
         _log_window(a, h, s, e, rec)

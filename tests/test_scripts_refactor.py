@@ -384,6 +384,16 @@ def test_empty_run_reset_on_data():
     assert extract_all._stop(args, count) is False
 
 
+def test_empty_run_forward_mode_is_noop():
+    # In forward (chronological) mode the backfill early-exit must never fire,
+    # even with stop_after_empty set — otherwise an empty gap could truncate
+    # extraction. The count stays unchanged and _stop is always False.
+    args = _empty_args(stop_after_empty=3, reverse=False)
+    assert extract_all._bump_empty(args, 2, 0) == 2   # empty window: count unchanged
+    assert extract_all._bump_empty(args, 2, 5) == 2   # data window: still unchanged
+    assert extract_all._stop(args, 99) is False
+
+
 # ---------------------------------------------------------------------------
 # extract_all._log_window
 # ---------------------------------------------------------------------------

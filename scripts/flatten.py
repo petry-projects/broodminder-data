@@ -121,18 +121,22 @@ def iter_hive_rows(hdir: Path, meta: dict):
         yield build_row(hid, m, pid, r)
 
 
-def stream_readings(raw_root, meta, base_cols, metric_cols, ndjson_fh, csv_writer, coverage) -> int:
+def stream_readings(raw_root, meta, base_cols, metric_cols, ndjson_fh, csv_writer, coverage):
     """Pass 2: stream every deduped reading row to ndjson (+ optional csv),
-    updating coverage. Returns the total row count written."""
+    updating coverage. Returns ``(n_rows, metric_keys)`` where ``metric_keys``
+    is the set of metric names observed during the pass — so an NDJSON-only
+    run can report metrics without a second full read of the raw windows."""
     n_rows = 0
+    metric_keys: set[str] = set()
     for hdir in hive_dirs(raw_root):
         for row in iter_hive_rows(hdir, meta):
             ndjson_fh.write(json.dumps(row) + "\n")
             if csv_writer:
                 csv_writer.writerow({k: row.get(k) for k in base_cols + metric_cols})
             n_rows += 1
+            metric_keys.update(k[2:] for k in row if k.startswith("m_"))
             accumulate_coverage(coverage, row)
-    return n_rows
+    return n_rows, metric_keys
 
 
 def write_notes(out_path: Path, meta: dict, raw: Path) -> int:
@@ -185,10 +189,15 @@ def main() -> int:
     base_cols = ["apiaryId", "apiaryName", "hiveId", "hiveName", "positionID",
                  "deviceId", "timestamp", "datetime", "batteryLevel", "chargeRemaining"]
 
-    # Pass 1: discover metric keys (stable, tiny set) so CSV has a fixed header
-    # AND for accurate output reporting of metrics actually present in NDJSON.
-    metric_keys = discover_metric_keys(RAW)
-    metric_cols = [f"m_{k}" for k in sorted(metric_keys)]
+    # Pass 1 is only needed to build a *fixed* CSV header up front. When CSV is
+    # disabled the metric keys are collected during the single streaming pass
+    # instead, so an NDJSON-only export never pays for a redundant full read.
+    if args.no_csv:
+        metric_keys: set = set()
+        metric_cols: list = []
+    else:
+        metric_keys = discover_metric_keys(RAW)
+        metric_cols = [f"m_{k}" for k in sorted(metric_keys)]
 
     # Pass 2: stream rows to gzipped ndjson (+ optional gzipped csv).
     coverage = defaultdict(lambda: {"rows": 0, "min_ts": None, "max_ts": None,
@@ -201,7 +210,9 @@ def main() -> int:
         csv_writer.writeheader()
 
     try:
-        n_rows = stream_readings(RAW, meta, base_cols, metric_cols, ndjson_fh, csv_writer, coverage)
+        n_rows, seen_keys = stream_readings(RAW, meta, base_cols, metric_cols,
+                                            ndjson_fh, csv_writer, coverage)
+        metric_keys |= seen_keys  # fills the NDJSON-only set; a no-op for CSV
     finally:
         ndjson_fh.close()
         if csv_fh:

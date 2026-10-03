@@ -45,11 +45,14 @@ def walk_sample_ids(apiaries):
             hv_id = first(hv, "hiveId", "id", "hiveID")
             if hive_id is None and hv_id is not None:
                 hive_id = hv_id
-            # Only look for a device if we found hive_id and haven't found device_id yet
-            # and the current hive matches the hive_id we found
-            if hive_id == hv_id and device_id is None:
+            # device_id is the first device encountered across *any* hive,
+            # independent of which hive supplied hive_id — the hive that
+            # provided hive_id may itself have no devices.
+            if device_id is None:
                 for dv in first(hv, "devices", "positions") or []:
-                    device_id = device_id or first(dv, "deviceId", "id", "deviceID")
+                    device_id = first(dv, "deviceId", "id", "deviceID")
+                    if device_id:
+                        break
     return hive_id, device_id
 
 

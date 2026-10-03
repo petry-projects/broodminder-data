@@ -47,7 +47,7 @@ def test_pyproject_toml_structure():
     urls = project.get("urls", {})
     assert "https://github.com/petry-projects/broodminder-data" in urls.get("Homepage", "")
     assert "https://github.com/petry-projects/broodminder-data" in urls.get("Repository", "")
-    assert "CHANGELOG.md" in urls.get("Changelog", "")
+    assert urls.get("Changelog") == "https://github.com/petry-projects/broodminder-data/blob/main/CHANGELOG.md"
 
     opt_deps = project.get("optional-dependencies", {})
     assert "mcp" in opt_deps

@@ -21,6 +21,44 @@ from pathlib import Path
 import pytest
 import yaml
 
+
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """A SafeLoader that rejects duplicate mapping keys.
+
+    PyYAML's default constructor silently keeps the *last* value when a mapping
+    has duplicate keys (its constructor does not check for duplicates), even
+    though the YAML spec requires mapping keys to be unique. A workflow that
+    declared two `concurrency:` blocks would therefore parse cleanly and the
+    compliance checks would inspect only the last one — masking an invalid
+    duplicate-key configuration. This loader fails closed on any duplicate.
+    """
+
+
+def _reject_duplicate_keys(loader: _UniqueKeyLoader, node, deep: bool = False):
+    mapping: dict = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in mapping:
+            raise yaml.constructor.ConstructorError(
+                "while constructing a mapping",
+                node.start_mark,
+                f"found duplicate key {key!r}",
+                key_node.start_mark,
+            )
+        mapping[key] = loader.construct_object(value_node, deep=deep)
+    return mapping
+
+
+_UniqueKeyLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _reject_duplicate_keys
+)
+
+
+def _strict_yaml_load(text: str):
+    """Parse YAML with duplicate mapping keys rejected (see _UniqueKeyLoader)."""
+    return yaml.load(text, Loader=_UniqueKeyLoader)
+
+
 ROOT = Path(__file__).resolve().parent.parent
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 GITLEAKS_CONFIG = ROOT / ".gitleaks.toml"
@@ -182,7 +220,7 @@ def test_dev_lead_uses_ref_matches_agent_ref():
 def _pr_auto_review_workflow() -> dict:
     assert PR_AUTO_REVIEW_WORKFLOW.exists(), f"{PR_AUTO_REVIEW_WORKFLOW} is missing"
     text = PR_AUTO_REVIEW_WORKFLOW.read_text(encoding="utf-8")
-    return yaml.safe_load(text)
+    return _strict_yaml_load(text)
 
 
 @pytest.mark.compliance
@@ -199,12 +237,55 @@ def test_pr_auto_review_declares_concurrency_block():
     )
 
 
+def _normalize_expr(expr: str) -> str:
+    """Collapse every run of whitespace (spaces and the newlines a folded YAML
+    block scalar preserves for its more-indented lines) to a single space and
+    strip. This yields one canonical token stream so a complete expression can
+    be compared verbatim regardless of how the source happens to wrap."""
+    return re.sub(r"\s+", " ", expr).strip()
+
+
+# The complete canonical concurrency expressions, token-for-token. Comparing the
+# normalized *whole* expression — not a set of substrings — is what makes an
+# operator swap detectable: flipping a branch `||` to `&&` (which would make both
+# event branches fall through to the run-ID group) or flipping the
+# `cancel-in-progress` `||` to `&&` (which would disable cancellation for both
+# events) leaves every substring present but changes the overall string, so the
+# equality check below fails where a substring check would silently pass.
+_CANONICAL_GROUP = _normalize_expr(
+    """
+    ${{
+    ((github.event_name == 'check_suite'
+      && github.event.check_suite.pull_requests[0]
+      && !github.event.check_suite.pull_requests[1])
+      && format('pr-auto-review-ready-check-pr-{0}-{1}', github.event.check_suite.pull_requests[0].number, github.event.check_suite.head_sha))
+    || ((github.event_name == 'workflow_run'
+      && github.event.workflow_run.pull_requests[0]
+      && !github.event.workflow_run.pull_requests[1])
+      && format('pr-auto-review-ready-check-pr-{0}-{1}', github.event.workflow_run.pull_requests[0].number, github.event.workflow_run.head_sha))
+    || format('pr-auto-review-ready-check-unique-{0}', github.run_id)
+    }}
+    """
+)
+
+_CANONICAL_CANCEL = _normalize_expr(
+    "${{ github.event_name == 'check_suite' || github.event_name == 'workflow_run' }}"
+)
+
+
 @pytest.mark.compliance
 def test_pr_auto_review_concurrency_group_matches_canonical():
     """The `concurrency:` surface must match the canonical group/cancel
     expressions: check_suite and workflow_run collapse onto a per-PR group and
     cancel in progress; every other context falls back to a unique-per-run
-    group that never cancels."""
+    group that never cancels.
+
+    The assertions compare the *complete* normalized expressions, not a set of
+    substrings: a substring check passes even when a logical operator is swapped
+    (e.g. `||`→`&&` between the two event branches, which would make both
+    branches fall through to the run-ID fallback, or in cancel-in-progress,
+    which would disable cancellation for both events). Full-expression equality
+    makes any such operator change fail."""
     workflow = _pr_auto_review_workflow()
     assert "concurrency" in workflow
     concurrency = workflow["concurrency"]
@@ -213,28 +294,18 @@ def test_pr_auto_review_concurrency_group_matches_canonical():
     group = concurrency.get("group")
     assert group, "concurrency.group must be defined"
     assert isinstance(group, str), "concurrency.group must be a string expression"
-    group_str = group
 
-    # Required subexpressions that must be present in the group expression
-    required_expressions = [
-        # check_suite cardinality: exactly one PR (element [0] exists, [1] does not)
-        "github.event.check_suite.pull_requests[0]",
-        "!github.event.check_suite.pull_requests[1]",
-        # workflow_run cardinality: exactly one PR (element [0] exists, [1] does not)
-        "github.event.workflow_run.pull_requests[0]",
-        "!github.event.workflow_run.pull_requests[1]",
-        # Per-PR group keys with head_sha binding (guards full argument wiring)
-        "format('pr-auto-review-ready-check-pr-{0}-{1}', github.event.check_suite.pull_requests[0].number, github.event.check_suite.head_sha)",
-        "format('pr-auto-review-ready-check-pr-{0}-{1}', github.event.workflow_run.pull_requests[0].number, github.event.workflow_run.head_sha)",
-        # Fallback unique-per-run group for non-standard contexts
-        "format('pr-auto-review-ready-check-unique-{0}', github.run_id)",
-    ]
-    for expr in required_expressions:
-        assert expr in group_str, (
-            f"pr-auto-review.yml concurrency.group has drifted from canonical; missing expression: {expr!r}"
-        )
+    assert _normalize_expr(group) == _CANONICAL_GROUP, (
+        "pr-auto-review.yml concurrency.group has drifted from canonical; the "
+        "complete expression (operators included) must match:\n"
+        f"  expected: {_CANONICAL_GROUP}\n"
+        f"  actual:   {_normalize_expr(group)}"
+    )
 
-    # Validate cancel-in-progress structure
+    # Validate cancel-in-progress is the complete canonical expression. Checking
+    # the whole expression (not the two event-name substrings) ensures swapping
+    # its `||` to `&&` — which silently disables cancellation for both events —
+    # is detected.
     assert "cancel-in-progress" in concurrency, (
         "concurrency.cancel-in-progress must be defined"
     )
@@ -242,10 +313,9 @@ def test_pr_auto_review_concurrency_group_matches_canonical():
     assert isinstance(cancel_in_progress, str), (
         "concurrency.cancel-in-progress must be a string expression"
     )
-    cancel_str = cancel_in_progress
-    assert "github.event_name == 'check_suite'" in cancel_str, (
-        "cancel-in-progress must check for check_suite event"
-    )
-    assert "github.event_name == 'workflow_run'" in cancel_str, (
-        "cancel-in-progress must check for workflow_run event"
+    assert _normalize_expr(cancel_in_progress) == _CANONICAL_CANCEL, (
+        "pr-auto-review.yml concurrency.cancel-in-progress has drifted from "
+        "canonical; the complete expression (operators included) must match:\n"
+        f"  expected: {_CANONICAL_CANCEL}\n"
+        f"  actual:   {_normalize_expr(cancel_in_progress)}"
     )

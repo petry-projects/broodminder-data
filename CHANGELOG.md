@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Sensor Battery Health & Offline Reporting Monitor:**
   - Evaluates battery percentages against low-battery threshold (<80%) and flags devices needing battery replacement.
   - Detects silent dropouts ("not reporting" / stale sensors) with default 7-day cutoff.
-  - Implemented core evaluation engine in `bm/battery.py` (`evaluate_battery_health`, `scan_device_health`, `print_health_summary`).
+  - Implemented core evaluation engine in `bm/battery.py` (`evaluate_device_health`, `scan_device_health_from_stream`, `scan_device_health_from_file`) with output rendering via `format_table`/`format_json`/`format_csv`.
   - Added standalone CLI script `scripts/battery_health.py` and console script entrypoint `broodminder-battery`.
   - Added deterministic unit test suite in `tests/test_battery.py` with 98.6% test coverage.
 - **Automated On-Merge Release Workflow:**
@@ -42,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Initial PyPI release of `broodminder-data`.
-- Reusable, typed Python client SDK (`bm.client.BroodMinderClient`) with automatic pagination, rate-limit awareness, and exponential backoff retry.
+- Reusable, typed Python client SDK (`bm.client.BroodMinderClient`) with rate-limit awareness, exponential backoff retry, and explicit time-window helpers (`iter_windows`) for walking histories longer than the API's per-request cap.
 - Standalone CLI utilities:
   - Account topology discovery (`scripts/discover.py`).
   - Resumable, budget-aware bulk historical export (`scripts/extract_all.py`).

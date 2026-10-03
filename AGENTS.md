@@ -25,8 +25,7 @@ broodminder-data/
 ├── bm/
 │   ├── __init__.py           # Public exports
 │   ├── battery.py            # Battery health & offline sensor evaluation engine
-│   ├── client.py             # Reusable BroodMinderClient (auth, retry, windowing)
-│   └── mcp_server.py         # FastMCP server for AI agents
+│   └── client.py             # Reusable BroodMinderClient (auth, retry, windowing)
 ├── scripts/
 │   ├── battery_health.py     # Battery health & offline sensor inspection CLI
 │   ├── discover.py           # Account topology and schema inspection

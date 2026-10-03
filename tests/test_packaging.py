@@ -196,11 +196,13 @@ def test_changelog_structure():
     assert changelog_path.exists()
     content = changelog_path.read_text(encoding="utf-8")
     assert "# Changelog" in content
+    assert "## [Unreleased]" in content
     assert "## [0.1.4]" in content
     assert "## [0.1.3]" in content
     assert "## [0.1.2]" in content
     assert "## [0.1.1]" in content
     assert "## [0.1.0]" in content
+    assert "[Unreleased]:" in content
     assert "[0.1.4]:" in content
 
 

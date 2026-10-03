@@ -73,7 +73,6 @@ def select_apiaries(apiaries, filters):
     wanted_ids = {a for a in filters}  # also check exact ID matches
     return [a for a in apiaries
             if (a.get("name") or "").lower() in wanted
-            or (a.get("apiaryId") or "").lower() in wanted
             or a.get("apiaryId") in wanted_ids]
 
 

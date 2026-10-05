@@ -49,6 +49,7 @@ Changelog = "https://github.com/petry-projects/broodminder-data/blob/main/CHANGE
 Issues = "https://github.com/petry-projects/broodminder-data/issues"
 Discussions = "https://github.com/petry-projects/broodminder-data/discussions"
 Repository = "https://github.com/petry-projects/broodminder-data.git"
+"Commercial Support" = "https://combsmith.com"
 
 [tool.setuptools]
 packages = ["bm"]

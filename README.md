@@ -7,6 +7,7 @@
 [![PyPI version](https://img.shields.io/pypi/v/broodminder-data.svg)](https://pypi.org/project/broodminder-data/)
 [![OpenAPI 3.1](https://img.shields.io/badge/OpenAPI-3.1-brightgreen.svg)](openapi.yaml)
 [![MCP Ready](https://img.shields.io/badge/MCP-Ready-purple.svg)](https://modelcontextprotocol.io/)
+[![Contributing](https://img.shields.io/badge/contributions-welcome-brightgreen.svg)](https://github.com/petry-projects/.github/blob/main/CONTRIBUTING.md)
 
 **Make [BroodMinder](https://broodminder.com) beehive data easily accessible across diverse consumption use cases — bulk export, periodic delta sync, OpenAPI 3.1, and AI agents via MCP.**
 
@@ -454,9 +455,22 @@ All test fixtures use synthetic or anonymized values. Please **never** paste an 
 
 ---
 
+## Commercial Support & Integration
+
+Need enterprise SLAs, custom integrations, or managed telemetry pipelines for BroodMinder sensors, apiaries, or MCP agents?
+
+Commercial support and services are offered through **[CombSmith LLC](https://combsmith.com)**:
+- **Enterprise Support SLAs:** Priority bug fixes, dedicated maintenance windows, and security updates.
+- **Custom Integrations:** Bespoke apiary connectors, custom MCP tools, and automated data pipelines.
+- **Consulting & Implementation:** Architectural guidance, local-first telemetry sync, and monitoring automation.
+
+For commercial inquiries, email [support@combsmith.com](mailto:support@combsmith.com) or visit [combsmith.com](https://combsmith.com).
+
+---
+
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), and the [Code of Conduct](CODE_OF_CONDUCT.md).
+See the [Contributing Guide](https://github.com/petry-projects/.github/blob/main/CONTRIBUTING.md), [SECURITY.md](SECURITY.md), and the [Code of Conduct](CODE_OF_CONDUCT.md).
 Check out open [Discussions](https://github.com/petry-projects/broodminder-data/discussions) to weigh in on upcoming features and architectural decisions.
 
 ---

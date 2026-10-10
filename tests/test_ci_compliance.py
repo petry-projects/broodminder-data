@@ -35,6 +35,7 @@ class _UniqueKeyLoader(yaml.SafeLoader):
 
 
 def _reject_duplicate_keys(loader: _UniqueKeyLoader, node, deep: bool = False):
+    """Construct a mapping while rejecting duplicate keys."""
     mapping: dict = {}
     for key_node, value_node in node.value:
         key = loader.construct_object(key_node, deep=deep)
@@ -71,11 +72,13 @@ DEV_LEAD_CHANNEL = re.compile(r"^dev-lead/(v\d+-)?(stable|next|ring\d+)$")
 
 
 def _ci_text() -> str:
+    """Load the CI workflow file."""
     assert CI_WORKFLOW.exists(), f"{CI_WORKFLOW} is missing"
     return CI_WORKFLOW.read_text(encoding="utf-8")
 
 
 def test_ci_has_gitleaks_secret_scan_job():
+    """Verify CI workflow declares a secret-scan job with gitleaks configured."""
     text = _ci_text()
     assert "secret-scan:" in text, "ci.yml must declare a `secret-scan` job"
     assert "gitleaks detect" in text, "secret-scan job must run `gitleaks detect`"
@@ -85,6 +88,7 @@ def test_ci_has_gitleaks_secret_scan_job():
 
 
 def test_secret_scan_job_uses_checksum_verified_install():
+    """Verify secret-scan job uses a checksum-verified gitleaks install."""
     text = _ci_text()
     assert "GITLEAKS_VERSION" in text, "install step must pin a gitleaks version"
     assert "GITLEAKS_CHECKSUM" in text, "install step must verify a checksum (GITLEAKS_CHECKSUM)"
@@ -93,6 +97,7 @@ def test_secret_scan_job_uses_checksum_verified_install():
 
 
 def test_gitleaks_config_present():
+    """Verify .gitleaks.toml exists with an allowlist section."""
     assert GITLEAKS_CONFIG.exists(), ".gitleaks.toml must exist at the repo root"
     text = GITLEAKS_CONFIG.read_text()
     assert "[allowlist]" in text, ".gitleaks.toml must define an [allowlist] section"
@@ -126,6 +131,7 @@ def test_gitleaks_config_present():
     ],
 )
 def test_dev_lead_channel_regex_accepts_supported_forms(ref):
+    """Verify DEV_LEAD_CHANNEL regex accepts all supported channel forms."""
     assert DEV_LEAD_CHANNEL.match(ref), (
         f"'{ref}' must be accepted as a valid dev-lead channel; narrowing "
         f"DEV_LEAD_CHANNEL to drop a supported form reintroduces issue #67"
@@ -146,6 +152,7 @@ def test_dev_lead_channel_regex_accepts_supported_forms(ref):
     ],
 )
 def test_dev_lead_channel_regex_rejects_malformed_forms(ref):
+    """Verify DEV_LEAD_CHANNEL regex rejects malformed channel forms."""
     assert not DEV_LEAD_CHANNEL.match(ref), (
         f"'{ref}' must not be accepted as a dev-lead channel; the gate must stay strict"
     )
@@ -155,6 +162,7 @@ def test_dev_lead_channel_regex_rejects_malformed_forms(ref):
 
 
 def _dev_lead_text() -> str:
+    """Load the dev-lead workflow file."""
     assert DEV_LEAD_WORKFLOW.exists(), f"{DEV_LEAD_WORKFLOW} is missing"
     return DEV_LEAD_WORKFLOW.read_text(encoding="utf-8")
 
@@ -218,6 +226,7 @@ def test_dev_lead_uses_ref_matches_agent_ref():
 
 
 def _pr_auto_review_workflow() -> dict:
+    """Load and parse the pr-auto-review workflow file as YAML."""
     assert PR_AUTO_REVIEW_WORKFLOW.exists(), f"{PR_AUTO_REVIEW_WORKFLOW} is missing"
     text = PR_AUTO_REVIEW_WORKFLOW.read_text(encoding="utf-8")
     return _strict_yaml_load(text)
